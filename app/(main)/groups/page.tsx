@@ -206,7 +206,7 @@ export default function GroupsPage() {
 
             {/* Main Content */}
             <div
-                className="main-content-area flex-1 flex min-h-0 gap-2 md:gap-4 page-padding-x pb-12 md:pb-14"
+                className="main-content-area flex-1 flex min-h-0 gap-2 md:gap-4 page-padding-x"
                 style={{ overflow: 'visible' }}
                 onClick={handleMainContentClick}
             >

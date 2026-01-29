@@ -23,6 +23,7 @@ import { useSite, Site } from '@/lib/SiteContext'
 import { useDevices } from '@/lib/DomainContext'
 import { useZones } from '@/lib/DomainContext'
 import { useRules } from '@/lib/DomainContext'
+import { usePeople } from '@/lib/hooks/usePeople'
 import { trpc } from '@/lib/trpc/client'
 import { useToast } from '@/lib/ToastContext'
 import { Device } from '@/lib/mockData'
@@ -213,6 +214,14 @@ export default function DashboardPage() {
   // const { rules } = useRules() // Unused
   const trpcUtils = trpc.useUtils()
   const { addToast } = useToast()
+  const { people, fetchPeople } = usePeople()
+
+  // Fetch people when site changes
+  useEffect(() => {
+    if (activeSiteId) {
+      fetchPeople(activeSiteId)
+    }
+  }, [activeSiteId])
 
   // -- Map / Location State --
   const { data: locations = [] } = trpc.location.list.useQuery(
@@ -429,6 +438,16 @@ export default function DashboardPage() {
                 name: z.name,
                 color: z.color || '#cccccc',
                 polygon: z.polygon
+              }))}
+              people={people.map(p => ({
+                id: p.id,
+                firstName: p.firstName,
+                lastName: p.lastName,
+                x: p.x || 0,
+                y: p.y || 0,
+                imageUrl: p.imageUrl,
+                role: p.role,
+                email: p.email
               }))}
             />
           ) : (

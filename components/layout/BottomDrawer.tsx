@@ -110,9 +110,9 @@ export function BottomDrawer({ children }: BottomDrawerProps) {
   return (
     <div
       className={`
-        fixed bottom-0 left-0 md:left-20 right-0
+        w-full
         bg-[var(--color-surface)] backdrop-blur-xl border-t border-[var(--color-border-subtle)] 
-        transition-all duration-300 ease-out
+        transition-all duration-300 ease-out flex-shrink-0
         ${isExpanded ? 'h-64' : 'h-12'}
       `}
       style={{ zIndex: 'var(--z-drawer)' }}

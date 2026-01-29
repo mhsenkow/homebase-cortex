@@ -163,7 +163,7 @@ export default function FirmwarePage() {
       </div>
 
       {/* Main Content - same structure as People / Groups */}
-      <div className="main-content-area flex-1 flex min-h-0 gap-2 md:gap-4 page-padding-x pb-12 md:pb-14">
+      <div className="main-content-area flex-1 flex min-h-0 gap-2 md:gap-4 page-padding-x">
         {/* Left: Campaign list in card */}
         <div className="flex-1 min-w-0 flex flex-col">
           <div className="flex-1 min-h-0 relative rounded-2xl shadow-[var(--shadow-strong)] border border-[var(--color-border-subtle)] overflow-hidden bg-[var(--color-surface)]">

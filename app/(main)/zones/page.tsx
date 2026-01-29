@@ -279,7 +279,7 @@ export default function ZonesPage() {
   // Also apply layer filters
   const zoneDevices = useMemo(() => {
     const selectedZoneObj = zones.find(z => z.id === selectedZone)
-    const devicesInSelectedZone = selectedZoneObj 
+    const devicesInSelectedZone = selectedZoneObj
       ? new Set(getDevicesInZone(selectedZoneObj.id, devices).map(d => d.id))
       : null
 
@@ -452,7 +452,7 @@ export default function ZonesPage() {
 
       {/* Main Content: Map/List + Zones Panel */}
       <div
-        className="main-content-area flex-1 flex min-h-0 gap-2 md:gap-4 page-padding-x pb-12 md:pb-14"
+        className="main-content-area flex-1 flex min-h-0 gap-2 md:gap-4 page-padding-x"
         style={{ overflow: 'visible' }}
         onClick={handleMainContentClick}
       >

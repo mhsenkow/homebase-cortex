@@ -99,7 +99,7 @@ export function SiteDetailsPanel({
 }: SiteDetailsPanelProps) {
   const router = useRouter()
   const { setActiveSite, sites, activeSiteId } = useSite()
-  
+
   const handlePersonClick = (personId: string) => {
     router.push(`/people?personId=${personId}`)
   }
@@ -118,9 +118,9 @@ export function SiteDetailsPanel({
   // Find person matching manager name to get their role
   const managerPerson = site?.manager && sitePeople.length > 0
     ? sitePeople.find(p => {
-        const fullName = `${p.firstName} ${p.lastName}`.trim()
-        return fullName === site.manager || p.firstName === site.manager || p.lastName === site.manager
-      })
+      const fullName = `${p.firstName} ${p.lastName}`.trim()
+      return fullName === site.manager || p.firstName === site.manager || p.lastName === site.manager
+    })
     : null
   const managerRole = managerPerson?.role || 'Manager'
 
@@ -674,19 +674,7 @@ export function SiteDetailsPanel({
         </div>
 
 
-        {/* Delete Action */}
-        {onRemoveSite && (
-          <div className="pt-4 border-t border-[var(--color-danger)]/20">
-            <Button
-              onClick={() => setIsDeleteModalOpen(true)}
-              variant="danger"
-              className="w-full justify-center"
-            >
-              <Trash2 size={14} className="mr-2" />
-              Delete Site
-            </Button>
-          </div>
-        )}
+
       </div>
 
       {/* Confirmation Modal */}
@@ -705,39 +693,7 @@ export function SiteDetailsPanel({
         confirmLabel="Delete Site"
       />
 
-      {/* Action Buttons Bar */}
-      <div className="p-3 md:p-4 border-t border-[var(--color-border-subtle)] bg-[var(--color-surface-subtle)] flex-shrink-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            onClick={onAddSite}
-            variant="ghost"
-            className="border border-[var(--color-border-subtle)] hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-glow-primary)] flex-1 sm:flex-none justify-center"
-          >
-            <Plus size={14} className="md:w-4 md:h-4 mr-1.5 md:mr-2" />
-            <span className="hidden sm:inline">Add Site</span>
-            <span className="sm:hidden">Add</span>
-          </Button>
-          <div className="hidden sm:block flex-1" />
-          <Button
-            onClick={onImportSites}
-            variant="ghost"
-            className="border border-[var(--color-border-subtle)] hover:border-[var(--color-border-strong)] flex-1 sm:flex-none justify-center"
-          >
-            <Upload size={14} className="md:w-4 md:h-4 mr-1.5 md:mr-2" />
-            <span className="hidden sm:inline">Import</span>
-            <span className="sm:hidden">Import</span>
-          </Button>
-          <Button
-            onClick={onExportSites}
-            variant="ghost"
-            className="border border-[var(--color-border-subtle)] hover:border-[var(--color-border-strong)] flex-1 sm:flex-none justify-center"
-          >
-            <Download size={14} className="md:w-4 md:h-4 mr-1.5 md:mr-2" />
-            <span className="hidden sm:inline">Export</span>
-            <span className="sm:hidden">Export</span>
-          </Button>
-        </div>
-      </div>
+
 
       {/* Focused Modal */}
       <SiteFocusedModal

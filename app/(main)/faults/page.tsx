@@ -720,7 +720,7 @@ export default function FaultsPage() {
 
       {/* Main Content: Fault List/Map + Details Panel */}
       <div
-        className="main-content-area flex-1 flex min-h-0 gap-2 md:gap-4 page-padding-x pt-2 pb-12 md:pb-14 overflow-hidden"
+        className="main-content-area flex-1 flex min-h-0 gap-2 md:gap-4 page-padding-x pt-2 overflow-hidden"
         onClick={handleMainContentClick}
       >
         {/* Fault List/Map - Left Side */}

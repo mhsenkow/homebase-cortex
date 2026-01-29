@@ -17,12 +17,12 @@ import dynamic from 'next/dynamic'
 
 // Dynamically import PeopleMapCanvas to avoid SSR issues
 const PeopleMapCanvasDynamic = dynamic(() => import('@/components/people/PeopleMapCanvas').then(mod => ({ default: mod.PeopleMapCanvas })), {
-  ssr: false,
-  loading: () => (
-    <div className="h-full flex items-center justify-center">
-      <div className="text-[var(--color-text-muted)]">Loading map...</div>
-    </div>
-  ),
+    ssr: false,
+    loading: () => (
+        <div className="h-full flex items-center justify-center">
+            <div className="text-[var(--color-text-muted)]">Loading map...</div>
+        </div>
+    ),
 })
 
 export default function PeoplePage() {
@@ -280,9 +280,9 @@ export default function PeoplePage() {
                     const personText = personIds.length > 1 ? 'people' : 'person'
                     const count = personIds.length
                     const message = count + ' ' + personText + ' placed on map'
-                    addToast({ 
-                        type: 'success', 
-                        title: 'People Placed', 
+                    addToast({
+                        type: 'success',
+                        title: 'People Placed',
                         message: message
                     })
                 }
@@ -376,7 +376,7 @@ export default function PeoplePage() {
 
             {/* Main Content */}
             <div
-                className="main-content-area flex-1 flex min-h-0 gap-2 md:gap-4 page-padding-x pb-12 md:pb-14"
+                className="main-content-area flex-1 flex min-h-0 gap-2 md:gap-4 page-padding-x"
                 style={{ overflow: 'visible' }}
                 onClick={handleMainContentClick}
             >
@@ -460,88 +460,88 @@ export default function PeoplePage() {
 
                                 {/* Map Canvas */}
                                 <div className="w-full h-full rounded-2xl overflow-hidden bg-[var(--color-bg-elevated)] relative">
-                                {!mapUploaded ? (
-                                    <div className="w-full h-full flex items-center justify-center">
-                                        <div className="text-center text-[var(--color-text-muted)]">
-                                            <p className="mb-2">No map uploaded</p>
-                                            <p className="text-sm">Upload a map in Locations & Devices to place people</p>
+                                    {!mapUploaded ? (
+                                        <div className="w-full h-full flex items-center justify-center">
+                                            <div className="text-center text-[var(--color-text-muted)]">
+                                                <p className="mb-2">No map uploaded</p>
+                                                <p className="text-sm">Upload a map in Locations & Devices to place people</p>
+                                            </div>
                                         </div>
-                                    </div>
-                                ) : (
-                                    <div
-                                        className="w-full h-full"
-                                        onDragOver={(e) => {
-                                            e.preventDefault()
-                                            e.stopPropagation()
-                                            e.dataTransfer.dropEffect = 'move'
-                                        }}
-                                        onDrop={(e) => {
-                                            e.preventDefault()
-                                            e.stopPropagation()
-                                            handleMapDrop(e)
-                                        }}
-                                    >
-                                        <PeopleMapCanvasDynamic
-                                            onPersonSelect={(id) => {
-                                                setSelectedPersonId(id)
-                                                if (id) {
-                                                    setSelectedPersonIds([id])
-                                                }
+                                    ) : (
+                                        <div
+                                            className="w-full h-full"
+                                            onDragOver={(e) => {
+                                                e.preventDefault()
+                                                e.stopPropagation()
+                                                e.dataTransfer.dropEffect = 'move'
                                             }}
-                                            selectedPersonId={selectedPersonId}
-                                            mapImageUrl={mapImageUrl}
-                                            vectorData={vectorData}
-                                            people={filteredPeople}
-                                            mode={toolMode}
-                                            onPersonMove={handlePersonMove}
-                                            onPersonMoveEnd={handlePersonMoveEnd}
-                                            currentLocation={currentLocation ? {
-                                                id: currentLocation.id,
-                                                name: currentLocation.name,
-                                                type: (currentLocation.type === 'base' || currentLocation.type === 'zoom' ? currentLocation.type : 'base') as 'base' | 'zoom',
-                                                parentLocationId: currentLocation.parentId || undefined,
-                                                imageUrl: currentLocation.imageUrl || undefined,
-                                                vectorData: null,
-                                                zoomBounds: typeof currentLocation.zoomBounds === 'object' &&
-                                                    currentLocation.zoomBounds !== null &&
-                                                    'minX' in currentLocation.zoomBounds &&
-                                                    'minY' in currentLocation.zoomBounds &&
-                                                    'maxX' in currentLocation.zoomBounds &&
-                                                    'maxY' in currentLocation.zoomBounds
-                                                    ? currentLocation.zoomBounds as { minX: number; minY: number; maxX: number; maxY: number }
-                                                    : undefined,
-                                                createdAt: typeof currentLocation.createdAt === 'string'
-                                                    ? new Date(currentLocation.createdAt).getTime()
-                                                    : currentLocation.createdAt instanceof Date
-                                                        ? currentLocation.createdAt.getTime()
-                                                        : Date.now(),
-                                                updatedAt: typeof currentLocation.updatedAt === 'string'
-                                                    ? new Date(currentLocation.updatedAt).getTime()
-                                                    : currentLocation.updatedAt instanceof Date
-                                                        ? currentLocation.updatedAt.getTime()
-                                                        : Date.now(),
-                                            } : null}
-                                            onImageBoundsChange={setImageBounds}
-                                            onScaleChange={setMapScale}
-                                            onStagePositionChange={setMapPosition}
-                                            externalScale={mapScale}
-                                            externalStagePosition={mapPosition}
-                                        />
-                                    </div>
-                                )}
+                                            onDrop={(e) => {
+                                                e.preventDefault()
+                                                e.stopPropagation()
+                                                handleMapDrop(e)
+                                            }}
+                                        >
+                                            <PeopleMapCanvasDynamic
+                                                onPersonSelect={(id) => {
+                                                    setSelectedPersonId(id)
+                                                    if (id) {
+                                                        setSelectedPersonIds([id])
+                                                    }
+                                                }}
+                                                selectedPersonId={selectedPersonId}
+                                                mapImageUrl={mapImageUrl}
+                                                vectorData={vectorData}
+                                                people={filteredPeople}
+                                                mode={toolMode}
+                                                onPersonMove={handlePersonMove}
+                                                onPersonMoveEnd={handlePersonMoveEnd}
+                                                currentLocation={currentLocation ? {
+                                                    id: currentLocation.id,
+                                                    name: currentLocation.name,
+                                                    type: (currentLocation.type === 'base' || currentLocation.type === 'zoom' ? currentLocation.type : 'base') as 'base' | 'zoom',
+                                                    parentLocationId: currentLocation.parentId || undefined,
+                                                    imageUrl: currentLocation.imageUrl || undefined,
+                                                    vectorData: null,
+                                                    zoomBounds: typeof currentLocation.zoomBounds === 'object' &&
+                                                        currentLocation.zoomBounds !== null &&
+                                                        'minX' in currentLocation.zoomBounds &&
+                                                        'minY' in currentLocation.zoomBounds &&
+                                                        'maxX' in currentLocation.zoomBounds &&
+                                                        'maxY' in currentLocation.zoomBounds
+                                                        ? currentLocation.zoomBounds as { minX: number; minY: number; maxX: number; maxY: number }
+                                                        : undefined,
+                                                    createdAt: typeof currentLocation.createdAt === 'string'
+                                                        ? new Date(currentLocation.createdAt).getTime()
+                                                        : currentLocation.createdAt instanceof Date
+                                                            ? currentLocation.createdAt.getTime()
+                                                            : Date.now(),
+                                                    updatedAt: typeof currentLocation.updatedAt === 'string'
+                                                        ? new Date(currentLocation.updatedAt).getTime()
+                                                        : currentLocation.updatedAt instanceof Date
+                                                            ? currentLocation.updatedAt.getTime()
+                                                            : Date.now(),
+                                                } : null}
+                                                onImageBoundsChange={setImageBounds}
+                                                onScaleChange={setMapScale}
+                                                onStagePositionChange={setMapPosition}
+                                                externalScale={mapScale}
+                                                externalStagePosition={mapPosition}
+                                            />
+                                        </div>
+                                    )}
 
-                                {/* People Palette - Floating (inside map container) */}
-                                {mapUploaded && (
-                                    <PeoplePalette
-                                        people={filteredPeople}
-                                        selectedPersonIds={selectedPersonIds}
-                                        onSelectionChange={setSelectedPersonIds}
-                                        onDragStart={handlePaletteDragStart}
-                                        onAdd={handleCreatePerson}
-                                    />
-                                )}
+                                    {/* People Palette - Floating (inside map container) */}
+                                    {mapUploaded && (
+                                        <PeoplePalette
+                                            people={filteredPeople}
+                                            selectedPersonIds={selectedPersonIds}
+                                            onSelectionChange={setSelectedPersonIds}
+                                            onDragStart={handlePaletteDragStart}
+                                            onAdd={handleCreatePerson}
+                                        />
+                                    )}
+                                </div>
                             </div>
-                        </div>
                         </div>
 
                         {/* People Panel - Right Side */}
