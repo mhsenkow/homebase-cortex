@@ -13,11 +13,11 @@ else
   TAG=""
 fi
 
-FILENAME="backups/fusion_cortex_$TIMESTAMP$TAG.sql"
+FILENAME="backups/homebase_cortex_$TIMESTAMP$TAG.sql"
 
 # Check if container is running
-if ! docker ps | grep -q fusion-cortex-db; then
-  echo "❌ Error: Database container 'fusion-cortex-db' is not running."
+if ! docker ps | grep -q homebase-cortex-db; then
+  echo "❌ Error: Database container 'homebase-cortex-db' is not running."
   echo "   Run 'npm run cortex:wakeup' first."
   exit 1
 fi
@@ -25,7 +25,7 @@ fi
 echo "📦 Backing up database to $FILENAME..."
 
 # Execute pg_dump inside the container
-docker exec fusion-cortex-db pg_dump -U postgres fusion_cortex > "$FILENAME"
+docker exec homebase-cortex-db pg_dump -U postgres homebase_cortex > "$FILENAME"
 
 if [ $? -eq 0 ]; then
   echo "✅ Backup complete!"

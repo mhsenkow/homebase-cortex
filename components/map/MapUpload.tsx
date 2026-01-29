@@ -232,7 +232,7 @@ export function MapUpload({ onMapUpload, onVectorDataUpload }: MapUploadProps) {
 
     try {
       // Load one of the sample PDF floor plans
-      const samplePdfPath = '/floorplans/WMT 157 STORE PLAN (1).pdf'
+      const samplePdfPath = '/floorplans/evacuation_map_i2systems.pdf'
 
       console.log('Fetching sample floor plan from:', samplePdfPath)
 
@@ -268,7 +268,7 @@ export function MapUpload({ onMapUpload, onVectorDataUpload }: MapUploadProps) {
 
       console.log('Downloaded blob size:', blob.size)
 
-      const file = new File([blob], 'WMT 157 STORE PLAN (1).pdf', { type: 'application/pdf' })
+      const file = new File([blob], 'evacuation_map_i2systems.pdf', { type: 'application/pdf' })
 
       // Process it like a regular PDF upload
       await handleFileSelect(file)
@@ -419,7 +419,7 @@ export function MapUpload({ onMapUpload, onVectorDataUpload }: MapUploadProps) {
           variant="secondary"
           className="w-full mb-4"
         >
-          Load Sample Walmart Floor Plan
+          Load Sample Evacuation Map
         </Button>
 
         <div className="text-sm text-[var(--color-text-soft)] space-y-1">

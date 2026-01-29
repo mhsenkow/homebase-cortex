@@ -1,37 +1,57 @@
-# Fusion / Cortex — Commissioning & Configuration UI
+# Homebase Cortex — i2systems HQ Edition
 
 > **📚 Documentation**: See [DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md) for complete documentation navigation.  
 > **🤖 AI Assistants**: Start with [AI_NOTES.md](./AI_NOTES.md) for patterns and quick reference.
 
-A web-based commissioning & configuration UI for large-scale retail lighting deployments (e.g., Walmart, American Eagle).
+A **people-first** workspace management tool for the i2systems headquarters. This is a specialized variant of the Fusion/Cortex platform, tailored for a single site with an emphasis on personnel, teams, and the workspace environment rather than large-scale device commissioning.
 
 **Current Architecture (2025)**: Zustand stores + tRPC + Next.js 14 App Router. Legacy Context API files exist for compatibility but are deprecated.
 
 ## 📋 Table of Contents
 
+- [About This Variant](#-about-this-variant)
 - [Purpose](#-purpose)
 - [Architecture](#-architecture)
 - [Design System](#-design-system)
 - [Core Features](#-core-features)
-- [Multi-Site Architecture](#-multi-site-architecture)
 - [Getting Started](#-getting-started)
 - [Development](#-development)
 - [Deployment](#-deployment)
 - [Additional Documentation](#-additional-documentation)
 
+## 🏢 About This Variant
+
+**Homebase Cortex** is a derivative of the main Fusion/Cortex commissioning platform, purpose-built for the **i2systems headquarters**. 
+
+**Key Differences from Fusion/Cortex:**
+
+| Aspect | Fusion/Cortex (Main) | Homebase Cortex (This App) |
+|--------|---------------------|---------------------------|
+| **Focus** | Devices & commissioning | People & workspace |
+| **Sites** | Multi-site (thousands) | Single site (i2systems HQ) |
+| **Primary Users** | Field technicians | i2systems employees |
+| **Data Model** | Device-centric | People-centric |
+| **Scale** | Enterprise retail deployments | One headquarters building |
+
+This variant prioritizes:
+- **People & Teams** — Who sits where, team locations, desk assignments
+- **Space Management** — Meeting rooms, common areas, workspace zones
+- **Device Context** — Lighting and sensors as they relate to people's spaces
+- **Single Building** — Optimized UX for navigating one familiar location
+
 ## 🎯 Purpose
 
-Fusion/Cortex is:
-- A setup, mapping, and rules platform
-- A bridge between physical devices (fixtures, motion sensors, light sensors) and BACnet/BMS
-- Optimized for remote commissioning at scale (thousands of devices, thousands of sites)
-- **Multi-site aware** - supports managing multiple sites with isolated data per site
+Homebase Cortex is:
+- A **people-first** workspace and location tool for i2systems HQ
+- A way to find colleagues, teams, and meeting spaces
+- A bridge between physical devices (fixtures, motion sensors) and the people who use them
+- Optimized for a **single site** — the i2systems headquarters
 
-Fusion/Cortex is **not**:
-- A lighting control dashboard
+Homebase Cortex is **not**:
+- A multi-site commissioning tool (see Fusion/Cortex for that)
+- A field technician's deployment platform
 - An energy analytics/heatmap tool
 - A BMS replacement
-- A site manager "operations dashboard"
 
 ## 🏗️ Architecture
 
@@ -55,12 +75,14 @@ Fusion/Cortex is **not**:
 /
 ├── app/                    # Next.js App Router
 │   ├── (main)/            # Main layout group
-│   │   ├── dashboard/      # Multi-site dashboard
-│   │   ├── map/           # Locations & Devices section
-│   │   ├── zones/         # Zones section
+│   │   ├── dashboard/      # HQ Dashboard (single site)
+│   │   ├── people/        # 👥 People directory (PRIMARY)
+│   │   ├── teams/         # 👥 Teams & groups (PRIMARY)
+│   │   ├── map/           # HQ floor plan & locations
+│   │   ├── zones/         # Spaces & zones section
 │   │   ├── bacnet/        # BACnet Mapping section
-│   │   ├── rules/         # Rules & Overrides section
-│   │   ├── lookup/        # Device Lookup section (with manual entry)
+│   │   ├── rules/         # Rules & Automation section
+│   │   ├── lookup/        # Device Lookup section
 │   │   ├── faults/        # Faults / Health section
 │   │   └── layout.tsx     # Main layout wrapper
 │   ├── api/trpc/          # tRPC API route
@@ -95,6 +117,8 @@ Fusion/Cortex is **not**:
 │   └── schema.prisma      # Database schema
 └── lib/                   # Shared utilities & stores
     ├── stores/            # Zustand stores (current state management)
+    │   ├── personStore.ts # 👥 People/employee data (PRIMARY)
+    │   ├── groupStore.ts  # 👥 Teams/groups (PRIMARY)
     │   ├── deviceStore.ts
     │   ├── zoneStore.ts
     │   ├── ruleStore.ts
@@ -102,6 +126,8 @@ Fusion/Cortex is **not**:
     │   ├── mapStore.ts
     │   └── use*Sync.ts    # Sync hooks bridge tRPC ↔ stores
     ├── hooks/             # React hooks
+    │   ├── usePeople.ts   # 👥 People data hook (PRIMARY)
+    │   ├── useGroups.ts   # 👥 Teams/groups hook (PRIMARY)
     │   ├── useDevices.ts  # Device data hook (uses store)
     │   ├── useZones.ts    # Zone data hook (uses store)
     │   ├── useRules.ts    # Rule data hook (uses store)
@@ -198,85 +224,81 @@ The app uses a **main + panel** system:
 
 ## 📋 Core Features
 
-### 1. Multi-Site Dashboard
-- Overview of all sites in a grid
-- Site health, device counts, critical faults
-- Warranty alerts and map status
-- Quick navigation to site-specific pages
-- Detailed site information panel
+### 1. People & Teams (Primary)
+- **Directory**: Find colleagues by name, team, or role
+- **Team Views**: See who's on each team and where they sit
+- **Desk/Space Assignments**: Visual mapping of who sits where
+- **Profiles**: Contact info, role, team membership
+- **Search**: Quick lookup of any employee at HQ
 
-### 2. Locations & Devices
-- Point cloud visualization over blueprint
-- Color-coded by device type (fixtures, motion, light sensors)
-- Zoom, pan, drag-select
-- Layer toggles
-- Device selection → right panel details
-- Site-scoped map images
+### 2. HQ Dashboard
+- Overview of the i2systems headquarters
+- People counts by floor/area
+- Quick navigation to spaces and teams
+- Building status and occupancy
 
-### 3. Zones
-- Drag-select devices on map → create zone
-- Name + color code zones
-- Adjust membership with Ctrl-click
-- Zones are the unit of control for BMS + rules
-- Site-scoped zone data
+### 3. Locations & Map
+- Interactive floor plan of i2systems HQ
+- See people's locations overlaid on the map
+- Device visualization (fixtures, sensors) as secondary layer
+- Zoom, pan, and explore the building
+- Find people and navigate to their workspace
 
-### 4. BACnet Mapping
-- Table: Zone ↔ BACnet Object ID
-- Inline editing of IDs
-- Status: Connected / Error / Not Assigned
-- Validation help in right panel
-- Site-scoped mappings
+### 4. Spaces & Zones
+- Define workspaces, meeting rooms, common areas
+- Assign people and teams to zones
+- Color-coded areas for easy navigation
+- Zone-based lighting and device grouping
 
-### 5. Rules & Overrides
+### 5. Device Lookup
+- Search by device ID or serial number
+- Map highlight of device location
+- I2QR details: build date, CCT, warranty, parts list
+- Focused modal view with tabs (Overview, Metrics, History, Related)
+- Context: which people/spaces use this device
+
+### 6. Rules & Automation
 - Alexa-style rule builder:
   - Trigger (motion, no motion, daylight, BMS)
   - Condition (zone, duration, threshold)
   - Action (set zones, dim, return to BMS)
-- Override BMS checkbox + duration
+- Space-aware rules (e.g., "When meeting room is empty...")
 - Human-readable preview in right panel
-- Site-scoped rules
-
-### 6. Device Lookup
-- Search by device ID or serial number
-- Map highlight of device location
-- I2QR details: build date, CCT, warranty, parts list
-- Empty state with actions: Add Device Manually, Scan QR Code, Import/Export List
-- Focused modal view with tabs (Overview, Metrics, History, Related)
-- Site-scoped device data
 
 ### 7. Faults / Health
 - Summary counts (missing, offline, duplicates)
 - Click to see filtered device table
-- Detailed device info in right panel
+- Impact view: which spaces are affected
 - Focused modal view with comprehensive fault details
-- Site-scoped fault data
 
-### 8. Firmware Management
-- Manage device firmware versions
-- Create firmware update campaigns
-- Monitor update status
-- Site-scoped firmware operations
+### 8. BACnet Mapping
+- Table: Zone ↔ BACnet Object ID
+- Inline editing of IDs
+- Status: Connected / Error / Not Assigned
+- Validation help in right panel
 
-## 🏪 Multi-Site Architecture
+## 🏢 Single-Site Architecture
 
-The app supports managing multiple sites with isolated data:
+Unlike the main Fusion/Cortex platform which manages thousands of sites, Homebase Cortex is optimized for a **single site** — the i2systems headquarters.
 
-- **Site Store**: Zustand store (`lib/stores/siteStore.ts`) manages active site selection and site metadata
+**Benefits of Single-Site Focus:**
+- Simplified navigation (no site switching)
+- Faster load times (no multi-site data overhead)
+- Tailored UX for familiar spaces
+- People-centric data model without site isolation complexity
+
+**Technical Notes:**
+- **Site Store**: Zustand store (`lib/stores/siteStore.ts`) manages the headquarters site data
 - **Site Sync**: `lib/stores/useSiteSync.ts` handles tRPC ↔ store synchronization
-- **Site-Scoped Data**: All data (devices, zones, rules, maps, BACnet mappings) is namespaced by site ID in localStorage
-- **Site Switching**: Dropdown in `PageTitle` component allows switching between sites (shows loading state + toast notification)
-- **Data Isolation**: Each site has its own device list, zones, rules, and map images
 - **State Hydration**: `StateHydration` component initializes stores from database on app load
-- **Dashboard**: Shows overview of all sites, with detailed panel for selected site
 
-**Storage Keys Format:**
-- Devices: `fusion_devices_site_{siteId}`
-- Zones: `fusion_zones_site_{siteId}`
-- Rules: `fusion_rules_site_{siteId}`
-- Map Images: `fusion_map-image-url_site_{siteId}`
-- BACnet Mappings: `fusion_bacnet_mappings_site_{siteId}`
+**People & Groups System:**
+- **People Store**: `lib/stores/personStore.ts` manages employee data
+- **Group Store**: `lib/stores/groupStore.ts` manages teams and organizational groups
+- **Location Tracking**: Associates people with zones, desks, and spaces
 
 **⚠️ Migration Note**: The app has migrated from React Context API to Zustand stores. Legacy Context files (`*Context.tsx`) exist for backward compatibility but are deprecated. New code should use:
+- `usePeople()`, `useGroups()` hooks for people/team data
 - `useDevices()`, `useZones()`, `useRules()`, `useSite()` hooks (from `lib/hooks/`)
 - Direct store access: `useDeviceStore()`, `useZoneStore()`, etc. (from `lib/stores/`)
 
@@ -300,7 +322,7 @@ Run the entire application stack in containers. Works on **Apple Silicon (M1/M2/
 npm run cortex:wakeup
 ```
 
-- Open [http://localhost:3000](http://localhost:3000)
+- Open [http://localhost:3001](http://localhost:3001)
 - The app comes pre-seeded with sample data.
 
 To stop:
@@ -355,7 +377,7 @@ Check **Settings → Data** in the app to see which is active.
 ### Docker Compose
 
 The `docker-compose.yml` defines:
-- **PostgreSQL 15** on port 5433 (avoids conflicts)
+- **PostgreSQL 15** on port 5434 (avoids conflicts with fusion-cortex on 5433)
 - Persistent data volume
 - Credentials: `postgres` / `postgres`
 
@@ -525,9 +547,10 @@ The `ErrorBoundary` component provides error recovery at the component tree leve
 ## 🎯 Non-Goals
 
 **Do not implement:**
+- Multi-site management (this is a single-site app for i2systems HQ)
+- Field technician commissioning workflows
 - Energy savings charts
-- Heatmaps / occupancy maps
-- Analytics dashboards for site managers
+- Occupancy analytics dashboards
 - Legacy spec content about energy/analytics beyond what's defined
 - Device discovery/scanning (removed - use manual entry in lookup page)
 
@@ -555,4 +578,4 @@ The `ErrorBoundary` component provides error recovery at the component tree leve
 
 ---
 
-**Built with ❤️ for large-scale retail lighting deployments**
+**Built with ❤️ for the i2systems team**

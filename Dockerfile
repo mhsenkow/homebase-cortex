@@ -5,7 +5,7 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 # Install dependencies for native modules
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat openssl
 
 # Copy package files
 COPY package.json package-lock.json* ./
@@ -21,6 +21,9 @@ RUN npm ci
 # ================================
 FROM node:20-alpine AS builder
 WORKDIR /app
+
+# Install dependencies for Prisma
+RUN apk add --no-cache libc6-compat openssl
 
 # Copy deps from previous stage
 COPY --from=deps /app/node_modules ./node_modules

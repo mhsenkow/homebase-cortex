@@ -17,8 +17,8 @@ import { skipToken } from '@tanstack/react-query'
 import { SearchIsland } from '@/components/layout/SearchIsland'
 import { ResizablePanel } from '@/components/layout/ResizablePanel'
 import { SiteDetailsPanel } from '@/components/dashboard/StoreDetailsPanel'
-import { AddSiteModal } from '@/components/dashboard/AddSiteModal'
-import { SiteManagerDisplay } from '@/components/dashboard/SiteManagerDisplay'
+// import { AddSiteModal } from '@/components/dashboard/AddSiteModal' // Removed
+// import { SiteManagerDisplay } from '@/components/dashboard/SiteManagerDisplay' // Removed
 import { useSite, Site } from '@/lib/SiteContext'
 import { useDevices } from '@/lib/DomainContext'
 import { useZones } from '@/lib/DomainContext'
@@ -55,6 +55,18 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { PanelEmptyState } from '@/components/shared/PanelEmptyState'
+import { MapUpload } from '@/components/map/MapUpload'
+import dynamic from 'next/dynamic'
+
+// Dynamically import MapCanvas to avoid SSR issues
+const MapCanvas = dynamic(() => import('@/components/map/MapCanvas').then(mod => ({ default: mod.MapCanvas })), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full flex items-center justify-center">
+      <div className="text-[var(--color-text-muted)]">Loading map...</div>
+    </div>
+  ),
+})
 
 interface SiteSummary {
   siteId: string
@@ -71,8 +83,8 @@ interface SiteSummary {
     description: string
     location: string
   }>
-  warrantiesExpiring: number // Count of warranties expiring in next 30 days
-  warrantiesExpired: number // Count of expired warranties
+  warrantiesExpiring: number
+  warrantiesExpired: number
   mapUploaded: boolean
   lastActivity?: string
   needsAttention: boolean
@@ -198,956 +210,270 @@ export default function DashboardPage() {
   const { sites, activeSiteId, setActiveSite, activeSite, addSite, updateSite, removeSite } = useSite()
   const { devices } = useDevices()
   const { zones } = useZones()
-  const { rules } = useRules()
+  // const { rules } = useRules() // Unused
   const trpcUtils = trpc.useUtils()
   const { addToast } = useToast()
 
+  // -- Map / Location State --
+  const { data: locations = [] } = trpc.location.list.useQuery(
+    { siteId: activeSiteId || '' },
+    { enabled: !!activeSiteId }
+  )
+
+  // Use the first base location or the last active one
+  const currentLocation = useMemo(() => {
+    if (!locations.length) return null
+    // Prefer base locations
+    return locations.find((l: any) => l.type === 'base') || locations[0]
+  }, [locations])
+
+  const [mapImageUrl, setMapImageUrl] = useState<string | null>(null)
+
+  // Load map image
+  useEffect(() => {
+    if (!currentLocation) {
+      setMapImageUrl(null)
+      return
+    }
+    if (currentLocation.imageUrl) {
+      setMapImageUrl(currentLocation.imageUrl)
+    } else {
+      setMapImageUrl(null)
+    }
+  }, [currentLocation])
+
+  const mapUploaded = !!currentLocation
+
+  // -- Site Data aggregation (kept for the summary/overlay) --
   const [siteSummaries, setSiteSummaries] = useState<SiteSummary[]>([])
-  const [showAddSiteModal, setShowAddSiteModal] = useState(false)
-  const [editingSite, setEditingSite] = useState<Site | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
 
-  // Initialize selectedSiteId - ensure it's never null when sites exist
-  const getInitialSelectedSiteId = (): string => {
-    if (activeSiteId) return activeSiteId
-    if (sites.length > 0) return sites[0].id
-    return ''
-  }
+  // Fetch key data for active site
+  const [siteDevices, setSiteDevices] = useState<Device[]>([])
+  const [siteZones, setSiteZones] = useState<Zone[]>([])
+  const [siteFaults, setSiteFaults] = useState<any[]>([])
 
-  const [selectedSiteId, setSelectedSiteId] = useState<string>(() => getInitialSelectedSiteId())
-
-  // Ensure at least one site is always selected
   useEffect(() => {
-    if (sites.length === 0) return
+    if (!activeSiteId) return
 
-    // If activeSiteId is set, sync selectedSiteId with it
-    if (activeSiteId) {
-      setSelectedSiteId(activeSiteId)
-      return
-    }
-
-    // If no activeSiteId but we have sites, select the first one
-    // This ensures a site is always selected
-    const firstSiteId = sites[0].id
-    // Use queueMicrotask to prevent infinite loops
-    queueMicrotask(() => {
-      setActiveSite(firstSiteId)
-      setSelectedSiteId(firstSiteId)
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSiteId, sites]) // Remove setActiveSite from deps to prevent loops
-
-  // Fallback: ensure selectedSiteId is never empty when sites exist
-  useEffect(() => {
-    if (sites.length > 0 && (!selectedSiteId || selectedSiteId === '')) {
-      const siteToSelect = activeSiteId || sites[0].id
-      setSelectedSiteId(siteToSelect)
-      if (!activeSiteId) {
-        // Use queueMicrotask to prevent infinite loops
-        queueMicrotask(() => {
-          setActiveSite(siteToSelect)
-        })
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sites, selectedSiteId, activeSiteId]) // Remove setActiveSite from deps to prevent loops
-
-  // Fetch devices, zones, faults, and locations for all sites - create queries dynamically
-  // Note: We'll fetch data in the useEffect to avoid hook rule violations
-  const [siteDevicesMap, setSiteDevicesMap] = useState<Record<string, Device[]>>({})
-  const [siteZonesMap, setSiteZonesMap] = useState<Record<string, Zone[]>>({})
-  const [siteLocationsMap, setSiteLocationsMap] = useState<Record<string, boolean>>({})
-  const [siteFaultsMap, setSiteFaultsMap] = useState<Record<string, Array<{
-    deviceId: string
-    deviceName: string
-    faultType: FaultCategory
-    description: string
-    location: string
-  }>>>({})
-
-  // Refetch devices, zones, and faults when sites change or when we need to refresh
-  useEffect(() => {
-    if (sites.length === 0) return
-
-    // Fetch all data for all sites using tRPC utils
-    const fetchAllSiteData = async () => {
-      const devicesMap: Record<string, Device[]> = {}
-      const zonesMap: Record<string, Zone[]> = {}
-      const locationsMap: Record<string, boolean> = {}
-      const faultsMap: Record<string, Array<{
-        deviceId: string
-        deviceName: string
-        faultType: FaultCategory
-        description: string
-        location: string
-      }>> = {}
-
-      await Promise.all(
-        sites.map(async (site) => {
-          try {
-            // Fetch devices
-            const devices = await trpcUtils.device.list.fetch({
-              siteId: site.id,
-              includeComponents: true,
-            })
-            devicesMap[site.id] = devices || []
-
-            // Fetch zones
-            const zones = await trpcUtils.zone.list.fetch({
-              siteId: site.id,
-            })
-            zonesMap[site.id] = (zones || []).map(zone => ({
-              ...zone,
-              description: zone.description ?? undefined,
-              polygon: zone.polygon ?? [],
-            }))
-
-            // Fetch faults
-            const faults = await trpcUtils.fault.list.fetch({
-              siteId: site.id,
-              includeResolved: false,
-            })
-
-            // Fetch locations (to check if map is uploaded)
-            const locations = await trpcUtils.location.list.fetch({
-              siteId: site.id,
-            })
-            locationsMap[site.id] = locations ? locations.some(loc => loc.imageUrl || loc.vectorDataUrl) : false
-
-            // Convert database faults to critical faults format
-            const criticalFaults = (faults || []).slice(0, 3).map(fault => {
-              const device = devices?.find(d => d.id === fault.deviceId)
-              return {
-                deviceId: device?.deviceId || fault.deviceId,
-                deviceName: device?.deviceId || fault.deviceId,
-                faultType: fault.faultType as FaultCategory,
-                description: fault.description,
-                location: device?.location || 'Unknown',
-              }
-            })
-            faultsMap[site.id] = criticalFaults
-          } catch (error) {
-            console.error(`Failed to fetch data for site ${site.id}:`, error)
-            devicesMap[site.id] = []
-            zonesMap[site.id] = []
-            locationsMap[site.id] = false
-            faultsMap[site.id] = []
-          }
-        })
-      )
-
-      setSiteDevicesMap(devicesMap)
-      setSiteZonesMap(zonesMap)
-      setSiteLocationsMap(locationsMap)
-      setSiteFaultsMap(faultsMap)
-    }
-
-    fetchAllSiteData()
-
-    // Set up interval to refetch every 30 seconds
-    const interval = setInterval(fetchAllSiteData, 30000)
-
-    return () => clearInterval(interval)
-  }, [sites, trpcUtils])
-
-  // Load data for all sites
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    const summaries: SiteSummary[] = sites.map((site) => {
-      // Get devices, zones, and faults from state (fetched from database)
-      const devices: Device[] = siteDevicesMap[site.id] || []
-      const zones: Zone[] = siteZonesMap[site.id] || []
-      const criticalFaults = siteFaultsMap[site.id] || []
-
-      // Get map status from the locations map (fetched with other data)
-      const mapUploaded = siteLocationsMap[site.id] ?? false
-
-      // Calculate stats
-      const onlineDevices = devices.filter(d => d.status === 'online').length
-      const offlineDevices = devices.filter(d => d.status === 'offline' || d.status === 'missing')
-      const healthPercentage = devices.length > 0
-        ? Math.round((onlineDevices / devices.length) * 100)
-        : 100
-
-      // Count warranties expiring/expired
-      const now = new Date()
-      const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-
-      let warrantiesExpiring = 0
-      let warrantiesExpired = 0
-
-      devices.forEach(device => {
-        if (device.warrantyExpiry) {
-          const warranty = calculateWarrantyStatus(device.warrantyExpiry)
-          if (warranty.isExpired) {
-            warrantiesExpired++
-          } else if (warranty.isNearEnd) {
-            warrantiesExpiring++
-          }
-        }
-        // Check component warranties
-        device.components?.forEach(component => {
-          if (component.warrantyExpiry) {
-            const warranty = calculateWarrantyStatus(component.warrantyExpiry)
-            if (warranty.isExpired) {
-              warrantiesExpired++
-            } else if (warranty.isNearEnd) {
-              warrantiesExpiring++
-            }
-          }
-        })
-      })
-
-      // Determine if site needs attention
-      const needsAttention =
-        criticalFaults.length > 0 ||
-        warrantiesExpiring > 0 ||
-        warrantiesExpired > 0 ||
-        !mapUploaded ||
-        healthPercentage < 90
-
-      return {
-        siteId: site.id,
-        siteName: site.name,
-        totalDevices: devices.length,
-        onlineDevices,
-        offlineDevices: offlineDevices.length,
-        healthPercentage,
-        totalZones: zones.length,
-        criticalFaults,
-        warrantiesExpiring,
-        warrantiesExpired,
-        mapUploaded,
-        needsAttention,
-      }
-    })
-
-    setSiteSummaries(summaries)
-  }, [sites, siteDevicesMap, siteZonesMap, siteFaultsMap, siteLocationsMap])
-
-  const handleSiteClick = (siteId: string, targetPage?: string) => {
-    // If navigating to a page, always select
-    if (targetPage) {
-      setActiveSite(siteId)
-      setSelectedSiteId(siteId)
-      router.push(targetPage)
-      return
-    }
-
-    // Toggle selection: if clicking the same site, deselect it
-    if (selectedSiteId === siteId) {
-      setSelectedSiteId('')
-      return
-    }
-
-    setActiveSite(siteId)
-    setSelectedSiteId(siteId)
-  }
-
-  // Handle clicking outside cards to deselect
-  const cardsContainerRef = useRef<HTMLDivElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-
-  const handleMainContentClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement
-    // Deselect if clicking outside both the cards container and panel
-    if (
-      cardsContainerRef.current &&
-      (!panelRef.current || !panelRef.current.contains(target)) &&
-      !cardsContainerRef.current.contains(target)
-    ) {
-      setSelectedSiteId('')
-    }
-  }
-
-  // Site management handlers
-  const handleAddSite = useCallback(() => {
-    setEditingSite(null)
-    setShowAddSiteModal(true)
-  }, [])
-
-  const handleEditSite = useCallback((site: Site) => {
-    setEditingSite(site)
-    setShowAddSiteModal(true)
-  }, [])
-
-  const handleRemoveSite = useCallback((siteId: string) => {
-    removeSite(siteId)
-    // Re-calculate summaries after removal
-    setSiteSummaries(prev => prev.filter(s => s.siteId !== siteId))
-  }, [removeSite])
-
-  const handleAddSiteSubmit = useCallback(async (siteData: Omit<Site, 'id'>) => {
-    const newSite = addSite(siteData)
-
-    // If there's a temp image stored, move it to the new site ID
-    // The AddSiteModal should have stored it with a temp ID in formData.imageUrl
-    if (siteData.imageUrl && siteData.imageUrl.startsWith('temp-')) {
+    const fetchData = async () => {
       try {
-        const { getSiteImage, setSiteImage, removeSiteImage } = await import('@/lib/libraryUtils')
-        const tempImage = await getSiteImage(siteData.imageUrl)
-        if (tempImage) {
-          // Wait a bit for the site to be created and get a real ID
-          setTimeout(async () => {
-            // Get the actual site ID from the sites list
-            const actualSite = sites.find(s => s.name === newSite.name && s.siteNumber === newSite.siteNumber)
-            if (actualSite && siteData.imageUrl) {
-              await setSiteImage(actualSite.id, tempImage)
-              await removeSiteImage(siteData.imageUrl) // Clean up temp
-            }
-          }, 1000)
-        }
-      } catch (error) {
-        console.error('Failed to move temp image to new site:', error)
+        const [fetchedDevices, fetchedZones, fetchedFaults] = await Promise.all([
+          trpcUtils.device.list.fetch({ siteId: activeSiteId, includeComponents: true }),
+          trpcUtils.zone.list.fetch({ siteId: activeSiteId }),
+          trpcUtils.fault.list.fetch({ siteId: activeSiteId, includeResolved: false })
+        ])
+
+        setSiteDevices(fetchedDevices || [])
+        setSiteZones((fetchedZones || []).map((z: any) => ({ ...z, polygon: z.polygon || [] })))
+        setSiteFaults(fetchedFaults || [])
+
+      } catch (e) {
+        console.error("Error fetching dashboard data", e)
       }
     }
+    fetchData()
+  }, [activeSiteId, trpcUtils])
 
-    setActiveSite(newSite.id)
-    setSelectedSiteId(newSite.id)
-    setShowAddSiteModal(false)
-  }, [addSite, setActiveSite, sites])
+  // Compute summary for the active site
+  const activeSiteSummary = useMemo(() => {
+    if (!activeSite) return null
 
-  const handleEditSiteSubmit = useCallback((siteId: string, updates: Partial<Omit<Site, 'id'>>) => {
-    updateSite(siteId, updates)
-    setShowAddSiteModal(false)
-    setEditingSite(null)
-  }, [updateSite])
+    // Calculate stats
+    const onlineDevices = siteDevices.filter(d => d.status === 'online').length
+    const offlineDevices = siteDevices.filter(d => d.status === 'offline' || d.status === 'missing')
+    const healthPercentage = siteDevices.length > 0
+      ? Math.round((onlineDevices / siteDevices.length) * 100)
+      : 100
 
-  const handleImportSites = useCallback(() => {
-    // Create a hidden file input
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.json'
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) return
-
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        try {
-          const text = event.target?.result as string
-          const importedSites = JSON.parse(text)
-
-          if (!Array.isArray(importedSites)) {
-            addToast({
-              type: 'error',
-              title: 'Import Failed',
-              message: 'Invalid file format. Expected an array of sites.'
-            })
-            return
-          }
-
-          let count = 0
-          importedSites.forEach((site: any) => {
-            if (site.name && (site.siteNumber || site.storeNumber)) {
-              addSite({
-                name: site.name,
-                siteNumber: site.siteNumber || site.storeNumber, // Support both for backward compatibility
-                address: site.address || '',
-                city: site.city || '',
-                state: site.state || '',
-                zipCode: site.zipCode || '',
-                phone: site.phone,
-                manager: site.manager,
-                squareFootage: site.squareFootage,
-              })
-              count++
-            }
-          })
-
-          addToast({
-            type: 'success',
-            title: 'Import Successful',
-            message: `Successfully imported ${count} site(s)`
-          })
-        } catch (error) {
-          addToast({
-            type: 'error',
-            title: 'Import Failed',
-            message: 'Error importing file. Please check the format.'
-          })
-          console.error('Import error:', error)
-        }
-      }
-      reader.readAsText(file)
-    }
-    input.click()
-  }, [addSite])
-
-  const handleExportSites = useCallback(() => {
-    if (sites.length === 0) {
-      addToast({
-        type: 'warning',
-        title: 'No Sites',
-        message: 'No sites to export'
-      })
-      return
-    }
-
-    // Export as JSON
-    const exportData = sites.map(s => ({
-      name: s.name,
-      siteNumber: s.siteNumber,
-      address: s.address,
-      city: s.city,
-      state: s.state,
-      zipCode: s.zipCode,
-      phone: s.phone,
-      manager: s.manager,
-      squareFootage: s.squareFootage,
+    const criticalFaults = (siteFaults || []).slice(0, 3).map(fault => ({
+      deviceId: fault.deviceId,
+      deviceName: fault.deviceId, // simplistic
+      faultType: fault.faultType as FaultCategory,
+      description: fault.description,
+      location: 'Unknown',
     }))
 
-    const dataStr = JSON.stringify(exportData, null, 2)
-    const dataBlob = new Blob([dataStr], { type: 'application/json' })
-    const url = URL.createObjectURL(dataBlob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `sites-${new Date().toISOString().split('T')[0]}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-  }, [sites])
-
-  // Filter site summaries based on search query
-  const filteredSiteSummaries = useMemo(() => {
-    if (!searchQuery.trim()) return siteSummaries
-
-    const query = searchQuery.toLowerCase().trim()
-    return siteSummaries.filter(summary => {
-      const site = sites.find(s => s.id === summary.siteId)
-      if (!site) return false
-
-      // Search in site name, site number, city, state, manager, device count, zone count
-      const searchableText = [
-        site.name,
-        site.siteNumber,
-        site.city,
-        site.state,
-        site.manager,
-        String(summary.totalDevices),
-        String(summary.totalZones),
-        String(summary.healthPercentage),
-      ].filter(Boolean).join(' ').toLowerCase()
-
-      return searchableText.includes(query)
-    })
-  }, [siteSummaries, searchQuery, sites])
-
-  // Get detailed data for selected site
-  const selectedSiteSummary = useMemo(() => {
-    return siteSummaries.find(s => s.siteId === selectedSiteId) || null
-  }, [siteSummaries, selectedSiteId])
-
-  // Load detailed data for selected site from database
-  const [selectedSiteData, setSelectedSiteData] = useState<{
-    devices: Device[]
-    zones: Zone[]
-    rules: Rule[]
-  }>({ devices: [], zones: [], rules: [] })
-
-  useEffect(() => {
-    if (!selectedSiteId) return
-
-    // Use data from state maps (fetched from database)
-    const devices = siteDevicesMap[selectedSiteId] || []
-    const zones = siteZonesMap[selectedSiteId] || []
-
-    // Fetch rules for the selected site
-    const fetchRules = async () => {
-      try {
-        const rules = await trpcUtils.rule.list.fetch({
-          siteId: selectedSiteId,
-        })
-        setSelectedSiteData({
-          devices,
-          zones,
-          rules: (rules || []).map(rule => ({
-            ...rule,
-            description: rule.description ?? undefined,
-            ruleType: 'rule' as const,
-            targetType: 'zone' as const,
-            targetId: rule.zoneId ?? undefined,
-            targetName: rule.zoneName,
-            trigger: rule.trigger as any, // Database stores as string, frontend expects TriggerType
-          })),
-        })
-      } catch (error) {
-        console.error(`Failed to fetch rules for site ${selectedSiteId}:`, error)
-        setSelectedSiteData({
-          devices,
-          zones,
-          rules: [],
-        })
+    // Warranties
+    let warrantiesExpiring = 0
+    let warrantiesExpired = 0
+    siteDevices.forEach(d => {
+      if (d.warrantyExpiry) {
+        const w = calculateWarrantyStatus(d.warrantyExpiry)
+        if (w.isExpired) warrantiesExpired++
+        else if (w.isNearEnd) warrantiesExpiring++
       }
-    }
-
-    fetchRules()
-  }, [selectedSiteId, siteDevicesMap, siteZonesMap, trpcUtils])
-
-  const getHealthColor = (percentage: number) => {
-    if (percentage >= 95) return 'var(--color-success)'
-    if (percentage >= 85) return 'var(--color-warning)'
-    return 'var(--color-danger)'
-  }
-
-  const getHealthIcon = (percentage: number, iconSize: number = 16) => {
-    if (percentage >= 95) return <CheckCircle2 size={iconSize} className="text-[var(--color-success)]" />
-    if (percentage >= 85) return <AlertCircle size={iconSize} className="text-[var(--color-warning)]" />
-    return <XCircle size={iconSize} className="text-[var(--color-danger)]" />
-  }
-
-  // Calculate dashboard insights with trends
-  const dashboardInsight = useMemo(() => {
-    if (siteSummaries.length === 0) return null
-
-    const totalDevices = siteSummaries.reduce((sum, s) => sum + s.totalDevices, 0)
-    const totalOnline = siteSummaries.reduce((sum, s) => sum + s.onlineDevices, 0)
-    const avgHealth = Math.round(
-      siteSummaries.reduce((sum, s) => sum + s.healthPercentage, 0) / siteSummaries.length
-    )
-    const sitesNeedingAttention = siteSummaries.filter(s => s.needsAttention).length
-    const totalCriticalFaults = siteSummaries.reduce((sum, s) => sum + s.criticalFaults.length, 0)
-
-    // Simulate trend data (in production, this would come from historical data)
-    // Mock: Calculate "improving" sites (health > 95% or recently improved)
-    const improvingSites = siteSummaries.filter(s => s.healthPercentage >= 95).length
-    const decliningSites = siteSummaries.filter(s => s.healthPercentage < 85).length
-
-    // Calculate health trend (simulate by comparing sites above/below thresholds)
-    const healthTrend = improvingSites > decliningSites ? 'improving' : improvingSites < decliningSites ? 'declining' : 'stable'
-    const healthDelta = improvingSites - decliningSites
-
-    // Calculate device online rate trend (simulate)
-    const onlineRate = totalDevices > 0 ? (totalOnline / totalDevices) * 100 : 100
-    // Mock: Assume previous online rate was slightly different
-    const previousOnlineRate = onlineRate - (Math.random() * 4 - 2) // ±2% variation
-    const onlineRateDelta = onlineRate - previousOnlineRate
-    const onlineRateTrend = onlineRateDelta > 1 ? 'up' : onlineRateDelta < -1 ? 'down' : 'stable'
+    })
 
     return {
-      healthTrend: {
-        value: avgHealth,
-        trend: healthTrend,
-        delta: healthDelta,
-        label: 'Health Trend',
-        description: healthTrend === 'improving'
-          ? `${improvingSites} sites improving`
-          : healthTrend === 'declining'
-            ? `${decliningSites} sites declining`
-            : 'Health stable',
-      },
-      onlineRate: {
-        value: Math.round(onlineRate),
-        trend: onlineRateTrend,
-        delta: Math.round(onlineRateDelta),
-        label: 'Online Rate',
-        description: `${totalOnline}/${totalDevices} devices online`,
-      },
+      siteId: activeSite.id,
+      siteName: activeSite.name,
+      totalDevices: siteDevices.length,
+      onlineDevices,
+      offlineDevices: offlineDevices.length,
+      healthPercentage,
+      totalZones: siteZones.length,
+      criticalFaults,
+      warrantiesExpiring,
+      warrantiesExpired,
+      mapUploaded,
+      needsAttention: criticalFaults.length > 0 || !mapUploaded
     }
-  }, [siteSummaries])
+  }, [activeSite, siteDevices, siteZones, siteFaults, mapUploaded])
+
+
+  const handleMapUpload = async (imageUrl: string, locationName: string) => {
+    // Reuse map upload logic, keeping it simple for dashboard
+    // In a real app, we'd share this logic via a hook
+    if (!activeSiteId) return
+
+    try {
+      // Assume direct upload for now or handle base64
+      // For simplicity in this refactor, we are focusing on the layout
+      // Re-implementing the core mutation call:
+      const { url } = await (async () => {
+        if (imageUrl.startsWith('data:')) {
+          const fetchRes = await fetch(imageUrl)
+          const blob = await fetchRes.blob()
+          const file = new File([blob], `map-${Date.now()}.jpg`, { type: 'image/jpeg' })
+          const formData = new FormData()
+          formData.append('file', file)
+          formData.append('bucket', 'map-data')
+          formData.append('fileName', `${activeSiteId}/${Date.now()}-map.jpg`)
+
+          const res = await fetch('/api/upload-image', { method: 'POST', body: formData })
+          if (!res.ok) throw new Error('Upload failed')
+          return await res.json()
+        }
+        return { url: imageUrl }
+      })()
+
+      await trpcUtils.client.location.create.mutate({
+        siteId: activeSiteId,
+        name: locationName,
+        type: 'base',
+        imageUrl: url
+      })
+
+      await trpcUtils.location.list.invalidate({ siteId: activeSiteId })
+      addToast({ type: 'success', title: 'Map Uploaded', message: 'Dashboard updated' })
+    } catch (e) {
+      console.error(e)
+      addToast({ type: 'error', title: 'Upload Failed', message: 'Could not upload map' })
+    }
+  }
+
+
+  // -- Render --
+
+  if (!activeSite) {
+    return (
+      <div className="h-full flex items-center justify-center p-8">
+        {/* Fallback if no site is selected/exists */}
+        <PanelEmptyState
+          icon={Building2}
+          title="No Site Selected"
+          description="Please select or create a site to view the Home Base."
+          action={<Button onClick={() => window.location.reload()}>Reload</Button>}
+        />
+      </div>
+    )
+  }
 
   return (
-    <div className="h-full flex flex-col min-h-0 overflow-hidden">
-      {/* Top Search Island */}
-      <div className="flex-shrink-0 page-padding-x pt-3 md:pt-4 pb-2 md:pb-3">
+    <div className="h-full flex flex-col min-h-0 overflow-hidden bg-[var(--color-background-elevated)]">
+      {/* Top Search Island - Modified to be simpler for Home Base view */}
+      <div className="flex-shrink-0 page-padding-x pt-3 md:pt-4 pb-2 md:pb-3 relative z-10">
         <SearchIsland
           position="top"
           fullWidth={true}
-          title="Dashboard"
-          subtitle="Multi-site overview"
-          placeholder="Search sites, devices, or type 'view devices' or 'view zones'..."
-          searchValue={searchQuery}
-          onSearchChange={setSearchQuery}
-          metrics={siteSummaries.length > 0 ? [
+          title="Home Base"
+          subtitle={activeSite.name}
+          // Hide metrics that are duplicate of the card overlay? 
+          // Or keep them as high level summary. Let's keep a simplified set.
+          metrics={activeSiteSummary ? [
             {
-              label: 'Total Sites',
-              value: siteSummaries.length,
-              color: 'var(--color-text)',
+              label: 'System Health',
+              value: `${activeSiteSummary.healthPercentage}%`,
+              color: activeSiteSummary.healthPercentage > 90 ? 'var(--color-success)' : 'var(--color-warning)'
             },
             {
               label: 'Total Devices',
-              value: siteSummaries.reduce((sum, s) => sum + s.totalDevices, 0).toLocaleString(),
-              color: 'var(--color-text)',
-            },
-            {
-              label: 'Sites Needing Attention',
-              value: siteSummaries.filter(s => s.needsAttention).length,
-              color: 'var(--color-warning)',
-            },
-            {
-              label: 'Avg. Health',
-              value: `${Math.round(
-                siteSummaries.reduce((sum, s) => sum + s.healthPercentage, 0) / siteSummaries.length
-              )}%`,
-              color: 'var(--color-success)',
-            },
-            {
-              label: 'Total Faults',
-              value: siteSummaries.reduce((sum, s) => sum + s.criticalFaults.length, 0),
-              color: 'var(--color-danger)',
-              icon: <AlertTriangle size={14} className="text-[var(--color-danger)]" />,
-              onClick: () => {
-                // Navigate to notifications with filters set to show all faults for all sites
-                router.push('/notifications?filter=faults&siteFilter=all')
-              },
-            },
-            ...(dashboardInsight ? [{
-              label: dashboardInsight.healthTrend.label,
-              value: `${dashboardInsight.healthTrend.value}%`,
-              color: dashboardInsight.healthTrend.trend === 'improving'
-                ? 'var(--color-success)'
-                : dashboardInsight.healthTrend.trend === 'declining'
-                  ? 'var(--color-danger)'
-                  : 'var(--color-text)',
-              trend: dashboardInsight.healthTrend.trend === 'improving' ? 'up' as const
-                : dashboardInsight.healthTrend.trend === 'declining' ? 'down' as const
-                  : 'stable' as const,
-              delta: dashboardInsight.healthTrend.delta,
-              icon: dashboardInsight.healthTrend.trend === 'improving' ? (
-                <TrendingUp size={14} className="text-[var(--color-success)]" />
-              ) : dashboardInsight.healthTrend.trend === 'declining' ? (
-                <TrendingDown size={14} className="text-[var(--color-danger)]" />
-              ) : (
-                <Activity size={14} className="text-[var(--color-text-muted)]" />
-              ),
-            }] : []),
+              value: activeSiteSummary.totalDevices,
+            }
           ] : []}
         />
       </div>
 
-      {/* Main Content: Site Cards + Details Panel */}
-      <div
-        className="main-content-area flex-1 flex min-h-0 gap-2 md:gap-4 page-padding-x pb-12 md:pb-14"
-        onClick={handleMainContentClick}
-      >
-        {/* Site Cards - Left Side */}
-        <div ref={cardsContainerRef} className="flex-1 min-w-0 flex flex-col overflow-y-auto -m-4 p-4">
-          {/* Site Cards Grid - Responsive */}
-          {/* Empty State: No Sites */}
-          {sites.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center min-h-[400px]">
-              <PanelEmptyState
-                icon={Building2}
-                title="No Sites Added"
-                description="Get started by adding your first site to monitor and manage."
-                action={
-                  <Button onClick={handleAddSite}>
-                    Add Site
-                  </Button>
-                }
-              />
-            </div>
-          ) : filteredSiteSummaries.length === 0 ? (
-            /* Empty State: No Search Results */
-            <div className="flex-1 flex items-center justify-center min-h-[400px]">
-              <PanelEmptyState
-                icon={Search}
-                title="No sites found"
-                description="No sites match your search terms."
-                action={
-                  <Button variant="secondary" onClick={() => setSearchQuery('')}>
-                    Clear Search
-                  </Button>
-                }
-              />
-            </div>
+      {/* Main Content: Split View (Map Left, Details Right) */}
+      <div className="flex-1 min-h-0 p-4 pt-0 md:pl-4 flex flex-row overflow-hidden">
+
+        {/* Map Area */}
+        <div className="flex-1 rounded-2xl overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] relative shadow-xl">
+          {mapUploaded ? (
+            <MapCanvas
+              mapImageUrl={mapImageUrl}
+              devices={siteDevices.map(d => ({
+                id: d.id,
+                x: d.x || 0,
+                y: d.y || 0,
+                type: d.type,
+                deviceId: d.deviceId,
+                status: d.status,
+                signal: d.signal || 100
+              }))}
+              // Read-only / view mode mostly
+              mode="select"
+              showZones={true}
+              zones={(siteZones || []).map((z: any) => ({
+                id: z.id,
+                name: z.name,
+                color: z.color || '#cccccc',
+                polygon: z.polygon
+              }))}
+            />
           ) : (
-            /* Site Cards - Responsive Layout */
-            <div className="flex flex-col gap-3 xl:grid xl:grid-cols-2 2xl:grid-cols-3 xl:gap-4 xl:auto-rows-fr">
-              {filteredSiteSummaries.map((summary) => {
-                const site = sites.find(s => s.id === summary.siteId)
-
-                return (
-                  <Card
-                    key={summary.siteId}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleSiteClick(summary.siteId)
-                    }}
-                    className={`cursor-pointer transition-all hover:border-[var(--color-primary)]/50 hover:shadow-[var(--shadow-strong)] 
-                      ${summary.siteId === selectedSiteId
-                        ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] shadow-[var(--shadow-glow-primary)] ring-1 ring-[var(--color-primary)]/20'
-                        : 'border-[var(--color-border-subtle)]'
-                      } ${summary.needsAttention && summary.siteId !== selectedSiteId ? 'ring-1 ring-[var(--color-warning)]/20' : ''}
-                      
-                      /* Responsive Layout Classes */
-                      relative overflow-visible /* For hanging tokens */
-                      flex flex-row p-4 pb-5 items-center gap-4 /* Base: List View (Row) - extra bottom padding for tokens */
-                      xl:flex-col xl:p-6 xl:pb-6 xl:gap-4 xl:fusion-card-tile xl:overflow-hidden /* Desktop: Card View (Tile) */
-                    `}
-                  >
-                    {/* === LIST VIEW (Mobile/Tablet < XL) === */}
-                    <div className="contents xl:hidden">
-                      {/* Identity Section: Image + Info */}
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="flex-shrink-0">
-                          <SiteImageCard siteId={summary.siteId} sizeClass="w-16 h-16" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="text-lg font-bold text-[var(--color-text)] truncate mb-0.5" title={summary.siteName}>
-                            {summary.siteName}
-                          </h3>
-                          {site && (
-                            <div className="space-y-0.5 text-xs text-[var(--color-text-muted)]">
-                              <div className="flex items-center gap-1">
-                                <MapPin size={11} />
-                                <span className="truncate">{site.city}, {site.state}</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Mini Metrics (Hidden on very small screens, shown on tablet) */}
-                      <div className="hidden sm:flex items-center gap-4 px-4 border-l border-r border-[var(--color-border-subtle)] mx-2">
-                        <div className="flex flex-col items-center">
-                          <span className="text-[10px] uppercase text-[var(--color-text-muted)]">Health</span>
-                          <span className="font-bold text-sm" style={{ color: getHealthColor(summary.healthPercentage) }}>
-                            {summary.healthPercentage}%
-                          </span>
-                        </div>
-                        <div className="flex flex-col items-center">
-                          <span className="text-[10px] uppercase text-[var(--color-text-muted)]">Devs</span>
-                          <span className="font-bold text-sm">{summary.totalDevices}</span>
-                        </div>
-                      </div>
-
-                      {/* Actions & Status Badge - Compact */}
-                      <div className="flex flex-col items-end gap-2 ml-auto min-w-[30px]">
-                        {/* Priority Badge Only */}
-                        {summary.criticalFaults.length > 0 ? (
-                          <Badge variant="destructive" appearance="soft" className="h-6 w-6 p-0 justify-center rounded-full" title={`${summary.criticalFaults.length} Critical Faults`}>
-                            <AlertTriangle size={12} />
-                          </Badge>
-                        ) : !summary.mapUploaded ? (
-                          <Badge variant="warning" appearance="soft" className="h-6 w-6 p-0 justify-center rounded-full" title="No Map">
-                            <Map size={12} />
-                          </Badge>
-                        ) : (
-                          <div className="h-6 w-6 flex items-center justify-center">
-                            {getHealthIcon(summary.healthPercentage, 18)}
-                          </div>
-                        )}
-
-                        <ChevronRight size={16} className="text-[var(--color-text-muted)]" />
-                      </div>
-
-                      {/* Token Strip - Right-aligned glass container on list view */}
-                      {(summary.criticalFaults.length > 0 || (summary.warrantiesExpiring > 0 || summary.warrantiesExpired > 0) || !summary.mapUploaded) && (
-                        <div className="absolute -bottom-2.5 right-3 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[var(--color-surface-glass-elevated)] backdrop-blur-md border border-[var(--color-border-subtle)]/50">
-                          {summary.criticalFaults.length > 0 && (
-                            <Badge
-                              variant="destructive"
-                              appearance="soft"
-                              className="token-link token-sm shrink-0"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleSiteClick(summary.siteId, '/faults')
-                              }}
-                            >
-                              <AlertTriangle size={10} />
-                              <span>{summary.criticalFaults.length} Critical</span>
-                            </Badge>
-                          )}
-
-                          {(summary.warrantiesExpiring > 0 || summary.warrantiesExpired > 0) && (
-                            <Badge variant="warning" appearance="soft" className="token-sm shrink-0">
-                              <Shield size={10} />
-                              <span>
-                                {summary.warrantiesExpiring > 0 && `${summary.warrantiesExpiring} exp`}
-                                {summary.warrantiesExpiring > 0 && summary.warrantiesExpired > 0 && '•'}
-                                {summary.warrantiesExpired > 0 && `${summary.warrantiesExpired} out`}
-                              </span>
-                            </Badge>
-                          )}
-
-                          {!summary.mapUploaded && (
-                            <Badge
-                              variant="warning"
-                              appearance="soft"
-                              className="token-link token-sm shrink-0"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleSiteClick(summary.siteId, '/map')
-                              }}
-                            >
-                              <Map size={10} />
-                              <span>No map</span>
-                            </Badge>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-
-                    {/* === GRID VIEW (Desktop >= XL) === */}
-                    <div className="hidden xl:contents">
-                      {/* Card Header */}
-                      <div className="fusion-card-tile-header w-full">
-                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                          {/* Site Image */}
-                          <div className="flex-shrink-0">
-                            <SiteImageCard siteId={summary.siteId} />
-                          </div>
-
-                          {/* Title & Subtitle */}
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-lg font-bold text-[var(--color-text)] truncate leading-tight mb-1" title={summary.siteName}>
-                              {summary.siteName}
-                            </h3>
-                            {site && (
-                              <div className="space-y-0.5">
-                                <div className="flex items-center gap-1 text-sm text-[var(--color-text-muted)]">
-                                  <MapPin size={12} />
-                                  <span className="truncate">{site.city}, {site.state}</span>
-                                </div>
-                                {site.manager && (
-                                  <SiteManagerDisplay site={site} />
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Header Actions */}
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          {getHealthIcon(summary.healthPercentage, 18)}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleSiteClick(summary.siteId, '/map')
-                            }}
-                            className="h-8 w-8"
-                            title="Explore Site"
-                          >
-                            <Search size={14} />
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* KPIs */}
-                      <div className="grid grid-cols-4 gap-2 py-2 w-full">
-                        <div className="text-center">
-                          <div className="text-xs text-[var(--color-text-muted)] mb-0.5">Health</div>
-                          <div className="text-sm font-semibold" style={{ color: getHealthColor(summary.healthPercentage) }}>
-                            {summary.healthPercentage}%
-                          </div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-xs text-[var(--color-text-muted)] mb-0.5">Devices</div>
-                          <div className="text-sm font-semibold text-[var(--color-text)]">{summary.totalDevices}</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-xs text-[var(--color-text-muted)] mb-0.5">Online</div>
-                          <div className="text-sm font-semibold" style={{ color: 'var(--color-success)' }}>
-                            {summary.onlineDevices}
-                          </div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-xs text-[var(--color-text-muted)] mb-0.5">Zones</div>
-                          <div className="text-sm font-semibold text-[var(--color-text)]">{summary.totalZones}</div>
-                        </div>
-                      </div>
-
-                      {/* Status Indicators */}
-                      <div className="flex flex-wrap items-center gap-1.5 w-full">
-                        {summary.criticalFaults.length > 0 && (
-                          <Badge
-                            variant="destructive"
-                            appearance="soft"
-                            className="token-link text-xs gap-1"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleSiteClick(summary.siteId, '/faults')
-                            }}
-                          >
-                            <AlertTriangle size={11} />
-                            <span>{summary.criticalFaults.length} Critical</span>
-                          </Badge>
-                        )}
-
-                        {(summary.warrantiesExpiring > 0 || summary.warrantiesExpired > 0) && (
-                          <Badge variant="warning" appearance="soft" className="text-xs gap-1">
-                            <Shield size={11} />
-                            <span>
-                              {summary.warrantiesExpiring > 0 && `${summary.warrantiesExpiring} expiring`}
-                              {summary.warrantiesExpiring > 0 && summary.warrantiesExpired > 0 && ' • '}
-                              {summary.warrantiesExpired > 0 && `${summary.warrantiesExpired} expired`}
-                            </span>
-                          </Badge>
-                        )}
-
-                        {!summary.mapUploaded && (
-                          <Badge
-                            variant="warning"
-                            appearance="soft"
-                            className="token-link text-xs gap-1"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleSiteClick(summary.siteId, '/map')
-                            }}
-                          >
-                            <Map size={11} />
-                            <span>No map</span>
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                )
-              })}
+            <div className="h-full w-full flex items-center justify-center bg-[var(--color-surface-subtle)]">
+              <div className="max-w-md w-full">
+                <MapUpload onMapUpload={handleMapUpload} />
+              </div>
             </div>
           )}
-
         </div>
 
-        {/* Site Details Panel - Right Side */}
-        {selectedSiteId && (
-          <div ref={panelRef}>
-            <ResizablePanel
-              defaultWidth={384}
-              minWidth={320}
-              maxWidth={512}
-              collapseThreshold={200}
-              storageKey="dashboard_panel"
-            >
-              <SiteDetailsPanel
-                site={activeSite || (selectedSiteId ? sites.find(s => s.id === selectedSiteId) : sites[0]) || null}
-                devices={selectedSiteData.devices}
-                zones={selectedSiteData.zones}
-                rules={selectedSiteData.rules}
-                criticalFaults={selectedSiteSummary?.criticalFaults || []}
-                warrantiesExpiring={selectedSiteSummary?.warrantiesExpiring || 0}
-                warrantiesExpired={selectedSiteSummary?.warrantiesExpired || 0}
-                mapUploaded={selectedSiteSummary?.mapUploaded || false}
-                healthPercentage={selectedSiteSummary?.healthPercentage || 100}
-                onlineDevices={selectedSiteSummary?.onlineDevices || 0}
-                offlineDevices={selectedSiteSummary?.offlineDevices || 0}
-                missingDevices={(selectedSiteSummary?.totalDevices || 0) - (selectedSiteSummary?.onlineDevices || 0) - (selectedSiteSummary?.offlineDevices || 0)}
-                onAddSite={handleAddSite}
-                onEditSite={handleEditSite}
-                onRemoveSite={handleRemoveSite}
-                onImportSites={handleImportSites}
-                onExportSites={handleExportSites}
-              />
-            </ResizablePanel>
-          </div>
-        )}
+        {/* Right Side Panel */}
+        <ResizablePanel
+          defaultWidth={400}
+          minWidth={320}
+          maxWidth={600}
+          className="flex-shrink-0 h-full ml-4"
+        >
+          {activeSite && activeSiteSummary ? (
+            <SiteDetailsPanel
+              site={activeSite}
+              devices={siteDevices}
+              zones={siteZones}
+              rules={[]} // Fetch rules if needed, empty for now
+              criticalFaults={activeSiteSummary.criticalFaults || []}
+              warrantiesExpiring={activeSiteSummary.warrantiesExpiring || 0}
+              warrantiesExpired={activeSiteSummary.warrantiesExpired || 0}
+              mapUploaded={mapUploaded}
+              healthPercentage={activeSiteSummary.healthPercentage}
+              onlineDevices={activeSiteSummary.onlineDevices || 0}
+              offlineDevices={(activeSiteSummary.totalDevices || 0) - (activeSiteSummary.onlineDevices || 0)}
+              missingDevices={0} // Fetch if needed
+              onAddSite={() => { }} // Placeholder
+              onEditSite={() => { }} // Placeholder
+              onRemoveSite={() => { }} // Placeholder
+              onImportSites={() => { }} // Placeholder
+              onExportSites={() => { }} // Placeholder
+            />
+          ) : (
+            <div className="h-full w-full flex items-center justify-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
+              <span className="text-[var(--color-text-muted)]">Loading details...</span>
+            </div>
+          )}
+        </ResizablePanel>
       </div>
-
-      {/* Add/Edit Site Modal */}
-      <AddSiteModal
-        isOpen={showAddSiteModal}
-        onClose={() => {
-          setShowAddSiteModal(false)
-          setEditingSite(null)
-        }}
-        onAdd={handleAddSiteSubmit}
-        onEdit={handleEditSiteSubmit}
-        editingSite={editingSite}
-      />
-    </div >
+    </div>
   )
 }

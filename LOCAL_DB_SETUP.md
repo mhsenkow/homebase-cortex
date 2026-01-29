@@ -16,7 +16,7 @@ This project uses **Docker** for local PostgreSQL development. This gives you an
 cp env.example .env.local.template
 
 # Edit with your local Docker settings (defaults should work):
-# DATABASE_URL="postgresql://postgres:postgres@localhost:5433/fusion_cortex"
+# DATABASE_URL="postgresql://postgres:postgres@localhost:5434/homebase_cortex"
 # NEXT_PUBLIC_DB_ENV="local"
 ```
 
@@ -26,7 +26,7 @@ cp env.example .env.local.template
 npm run db:up
 ```
 
-This starts a PostgreSQL 15 container on port **5433** (to avoid conflicts with any existing PostgreSQL).
+This starts a PostgreSQL 15 container on port **5434** (to avoid conflicts with fusion-cortex on 5433).
 
 ### 2. Push the Schema
 
@@ -84,14 +84,14 @@ The Settings → Data section shows which environment is currently active.
 | Property | Value |
 |----------|-------|
 | Host | `localhost` |
-| Port | `5433` |
-| Database | `fusion_cortex` |
+| Port | `5434` |
+| Database | `homebase_cortex` |
 | User | `postgres` |
 | Password | `postgres` |
 
 Connection string:
 ```
-postgresql://postgres:postgres@localhost:5433/fusion_cortex
+postgresql://postgres:postgres@localhost:5434/homebase_cortex
 ```
 
 ---
@@ -99,7 +99,7 @@ postgresql://postgres:postgres@localhost:5433/fusion_cortex
 ## Troubleshooting
 
 ### "Port 5432 is already in use"
-The Docker container uses port **5433** to avoid conflicts. If you see this error, another PostgreSQL instance may be running. The current setup avoids this by using 5433.
+The Docker container uses port **5434** to avoid conflicts with fusion-cortex (which uses 5433). If you see this error, another PostgreSQL instance may be running.
 
 ### "Cannot connect to Docker daemon"
 Make sure Docker Desktop is running. Open Docker Desktop and wait for it to fully start.

@@ -27,7 +27,7 @@ This project uses Supabase for:
 2. **Create a new project** (or use existing):
    - Click "New Project"
    - Choose organization
-   - Enter project name (e.g., "fusion-cortex")
+   - Enter project name (e.g., "homebase-cortex")
    - Enter database password (save this!)
    - Choose region
    - Click "Create new project"

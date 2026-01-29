@@ -4,14 +4,14 @@ services:
   # =================================
   postgres:
     image: postgres:15-alpine
-    container_name: fusion-cortex-db
+    container_name: homebase-cortex-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: fusion_cortex
+      POSTGRES_DB: homebase_cortex
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +20,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - fusion-network
+      - homebase-network
     logging:
       driver: "json-file"
       options:
@@ -34,20 +34,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: fusion-cortex-app
+    container_name: homebase-cortex-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/fusion_cortex
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/homebase_cortex
       NEXT_PUBLIC_DB_ENV: docker
-      NEXTAUTH_SECRET: fusion-cortex-secret-key
-      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: homebase-cortex-secret-key
+      NEXTAUTH_URL: http://localhost:3001
     depends_on:
       postgres:
         condition: service_healthy
     networks:
-      - fusion-network
+      - homebase-network
     logging:
       driver: "json-file"
       options:
@@ -59,25 +59,25 @@ services:
   # =================================
   app-dev:
     image: node:20-alpine
-    container_name: fusion-cortex-dev
+    container_name: homebase-cortex-dev
     working_dir: /app
     command: sh -c "npm install && npx prisma generate && npm run dev"
     ports:
-      - "3000:3000"
+      - "3001:3000"
     volumes:
       - .:/app
       - /app/node_modules
       - /app/.next
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/fusion_cortex
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/homebase_cortex
       NEXT_PUBLIC_DB_ENV: docker
       NEXTAUTH_SECRET: development-secret-key-12345
-      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_URL: http://localhost:3001
     depends_on:
       postgres:
         condition: service_healthy
     networks:
-      - fusion-network
+      - homebase-network
     logging:
       driver: "json-file"
       options:
@@ -87,7 +87,7 @@ services:
       - dev
 
 networks:
-  fusion-network:
+  homebase-network:
     driver: bridge
 
 volumes:

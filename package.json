@@ -1,12 +1,12 @@
 {
-  "name": "fusion-cortex",
+  "name": "homebase-cortex",
   "version": "0.4.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "dev:local": "cp .env.local.template .env.local && next dev",
     "dev:cloud": "cp .env.cloud .env.local && next dev",
-    "cortex:wakeup": "docker compose up --build -d && echo '🧠 Cortex is awake! Open http://localhost:3000'",
+    "cortex:wakeup": "docker compose up --build -d && echo '🧠 Cortex is awake! Open http://localhost:3001'",
     "cortex:wakeup:dev": "docker compose --profile dev up -d",
     "cortex:sleep": "docker compose down && echo '🧠 Cortex is sleeping.'",
     "cortex:remember": "./scripts/backup-db.sh",
