@@ -9,7 +9,7 @@ This guide explains how to seed the database with realistic, cohesive demo data 
 ## Overview
 
 The seeding script creates:
-- **5 Sites** (stores) with unique characteristics
+- **3 Sites** (stores) with unique characteristics
 - **Devices** (fixtures, motion sensors) with components, positioned in zones
 - **Zones** that logically group devices (Grocery, Produce, Electronics, etc.)
 - **BACnet Mappings** for zones (80% of zones have mappings)
@@ -17,11 +17,17 @@ The seeding script creates:
 - **Faults** (devices with offline/missing status)
 
 Each site has a unique theme and characteristics:
-- **Store #1234** (Springfield, IL): Grocery-focused, large grocery section
-- **Store #2156** (Riverside, CA): Outdoor-focused, garden center emphasis
-- **Store #3089** (Austin, TX): High-tech, electronics section
-- **Store #4421** (Portland, OR): Eco-friendly, daylight harvesting
-- **Store #5567** (Denver, CO): Mountain store, robust fixtures
+- **Main St Market** (Springfield, IL): Grocery-focused, large grocery section
+- **Riverside Garden Center** (Riverside, CA): Outdoor-focused, garden center emphasis
+- **Watertown** (Watertown, MA): Headquarters satellite location, smaller footprint
+
+### Adding Watertown to an existing database
+
+If your database was already seeded and you want to add the Watertown site without re-seeding:
+
+```bash
+npm run db:add-watertown
+```
 
 ## Running the Seed Script
 
@@ -33,7 +39,7 @@ npm run db:seed
 
 This will:
 1. Clear all existing data (sites, devices, zones, BACnet mappings, rules)
-2. Create 5 sites with complete demo data
+2. Create 3 sites with complete demo data (including Watertown)
 3. Generate ~150-200 devices per site
 4. Create 8-10 zones per site
 5. Create BACnet mappings for most zones

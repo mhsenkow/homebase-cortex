@@ -29,6 +29,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "npx tsx scripts/seedDatabase.ts",
+    "db:add-watertown": "npx tsx scripts/add-watertown-site.ts",
     "db:test": "npx tsx scripts/test-db-connection.ts",
     "db:migrate-types": "npx tsx scripts/migrate_device_types.ts",
     "db:fix-enum": "npx tsx scripts/fix_production_enum.ts",

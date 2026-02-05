@@ -93,6 +93,29 @@ const STORE_CONFIGS = [
       hasDaylightHarvesting: false,
     },
   },
+  {
+    id: 'store-watertown',
+    name: 'Watertown',
+    storeNumber: 'WT01',
+    address: '64 Arsenal Street',
+    city: 'Watertown',
+    state: 'MA',
+    zipCode: '02472',
+    phone: '(617) 555-0199',
+    manager: 'Sarah Jenkins', // Same CEO as Main St Market (primary site)
+    squareFootage: 28000,
+    openedDate: new Date('2020-03-15'),
+    theme: 'headquarters-satellite',
+    characteristics: {
+      grocerySize: 'small',
+      hasBakery: false,
+      hasDeli: false,
+      hasPharmacy: false,
+      hasGardenCenter: false,
+      hasElectronics: true,
+      hasDaylightHarvesting: true,
+    },
+  },
 ]
 
 // Zone templates that make sense for retail stores
@@ -884,6 +907,190 @@ export async function seedDatabase() {
 
   } catch (error) {
     console.error('❌ Error seeding database:', error)
+    throw error
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+// Add Watertown site to existing database (same CEO/manager as first site)
+export async function addWatertownSite() {
+  try {
+  const WATERTOWN_CONFIG = {
+    id: 'store-watertown',
+    name: 'Watertown',
+    storeNumber: 'WT01',
+    address: '64 Arsenal Street',
+    city: 'Watertown',
+    state: 'MA',
+    zipCode: '02472',
+    phone: '(617) 555-0199',
+    squareFootage: 28000,
+    openedDate: new Date('2020-03-15'),
+    theme: 'headquarters-satellite',
+    characteristics: {
+      grocerySize: 'small',
+      hasBakery: false,
+      hasDeli: false,
+      hasPharmacy: false,
+      hasGardenCenter: false,
+      hasElectronics: true,
+      hasDaylightHarvesting: true,
+    },
+  }
+
+  const existing = await prisma.site.findUnique({
+    where: { id: WATERTOWN_CONFIG.id },
+  })
+
+  if (existing) {
+    console.log('✅ Watertown site already exists. Skipping.')
+    return
+  }
+
+  // Use same manager/CEO as first existing site
+  const firstSite = await prisma.site.findFirst({
+    orderBy: { createdAt: 'asc' },
+  })
+  const manager = firstSite?.manager || 'Alex Chen'
+
+  console.log(`📦 Adding Watertown site (manager: ${manager}, same as ${firstSite?.name || 'primary'})`)
+
+  const { theme, characteristics, ...siteData } = WATERTOWN_CONFIG
+  const site = await prisma.site.create({
+    data: {
+      ...siteData,
+      manager,
+      updatedAt: new Date(),
+    },
+  })
+
+  const storeConfigForZones = { ...WATERTOWN_CONFIG, theme, characteristics }
+  const zonesData = generateZonesForStore(storeConfigForZones as typeof STORE_CONFIGS[0])
+  console.log(`  📍 Creating ${zonesData.length} zones...`)
+
+  const allDevices: Array<{ device: any; components: any[] }> = []
+  const createdZones: any[] = []
+
+  for (const zoneData of zonesData) {
+    const zone = await prisma.zone.create({
+      data: {
+        id: randomUUID(),
+        name: zoneData.zone.name,
+        color: zoneData.zone.color,
+        description: zoneData.zone.description,
+        polygon: zoneData.zone.polygon as any,
+        siteId: site.id,
+        daylightEnabled: WATERTOWN_CONFIG.characteristics.hasDaylightHarvesting || false,
+        minDaylight: WATERTOWN_CONFIG.characteristics.hasDaylightHarvesting ? 50 : null,
+        updatedAt: new Date(),
+      },
+    })
+
+    createdZones.push(zone)
+
+    for (const deviceData of zoneData.devices) {
+      const device = await prisma.device.create({
+        data: {
+          id: randomUUID(),
+          ...deviceData.device,
+          siteId: site.id,
+          updatedAt: new Date(),
+        },
+      })
+
+      for (const component of deviceData.components) {
+        await prisma.device.create({
+          data: {
+            id: randomUUID(),
+            ...component,
+            parentId: device.id,
+            siteId: site.id,
+            updatedAt: new Date(),
+          },
+        })
+      }
+
+      await prisma.zoneDevice.create({
+        data: {
+          id: randomUUID(),
+          zoneId: zone.id,
+          deviceId: device.id,
+        },
+      })
+
+      allDevices.push({ device, components: deviceData.components })
+    }
+  }
+
+  console.log(`  ✅ Created ${allDevices.length} devices`)
+
+  const bacnetMappings = generateBACnetMappings(createdZones.map(z => z.id))
+  for (const mapping of bacnetMappings) {
+    await prisma.bACnetMapping.create({
+      data: {
+        id: randomUUID(),
+        zoneId: mapping.zoneId,
+        bacnetObjectId: mapping.bacnetObjectId,
+        status: mapping.status,
+        lastConnected: mapping.lastConnected,
+        updatedAt: new Date(),
+      },
+    })
+  }
+
+  const rules = generateRules(site.id, zonesData.map(z => ({
+    zone: { ...z.zone, id: createdZones.find(cz => cz.name === z.zone.name)?.id || '' },
+    devices: z.devices
+  })))
+  for (const rule of rules) {
+    const zone = createdZones.find(z => {
+      if (rule.zoneId && typeof rule.zoneId === 'string') {
+        return z.name === rule.zoneId || z.name.includes(rule.zoneId)
+      }
+      return false
+    })
+    const targetZoneIds = rule.targetZones
+      .map((zoneName: string) => createdZones.find(z => z.name === zoneName)?.id)
+      .filter((id: string | undefined): id is string => !!id)
+
+    await prisma.rule.create({
+      data: {
+        id: randomUUID(),
+        name: rule.name,
+        description: rule.description,
+        trigger: rule.trigger,
+        condition: rule.condition as any,
+        action: rule.action as any,
+        overrideBMS: rule.overrideBMS,
+        enabled: rule.enabled,
+        siteId: site.id,
+        zoneId: zone?.id,
+        targetZones: targetZoneIds,
+        updatedAt: new Date(),
+      },
+    })
+  }
+
+  const faults = generateFaults(allDevices)
+  for (const fault of faults) {
+    await prisma.fault.create({
+      data: {
+        id: randomUUID(),
+        deviceId: fault.deviceId,
+        faultType: fault.faultType,
+        description: fault.description,
+        detectedAt: fault.detectedAt,
+        resolved: fault.resolved,
+        resolvedAt: fault.resolvedAt,
+        updatedAt: new Date(),
+      }
+    })
+  }
+
+  console.log('✅ Watertown site added with zones, devices, rules, and BACnet mappings.')
+  } catch (error) {
+    console.error('❌ Error adding Watertown site:', error)
     throw error
   } finally {
     await prisma.$disconnect()

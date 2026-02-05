@@ -41,6 +41,8 @@ interface SearchIslandProps {
   filterCount?: number
   onActionDetected?: (action: { id: string; label: string }) => void
   metrics?: Metric[]
+  /** Optional slot for custom header actions (e.g. view toggle) */
+  headerActions?: React.ReactNode
 }
 
 export function SearchIsland({
@@ -55,7 +57,8 @@ export function SearchIsland({
   onLayersClick,
   filterCount = 0,
   onActionDetected,
-  metrics = []
+  metrics = [],
+  headerActions
 }: SearchIslandProps) {
   const [internalSearchQuery, setInternalSearchQuery] = useState('')
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -267,6 +270,13 @@ export function SearchIsland({
 
           {/* Spacer to push search to the right - smaller on larger screens to give more space to search */}
           <div className="flex-1 hidden md:block min-w-0 lg:flex-[0.5] xl:flex-[0.3]" />
+
+          {/* Custom header actions slot (e.g. view toggle) */}
+          {headerActions && (
+            <div className="flex-shrink-0 flex items-center">
+              {headerActions}
+            </div>
+          )}
 
           {/* Search - Shrinks when space is constrained, min-width 120px, grows on larger screens */}
           <div className="relative min-w-0 w-full md:w-auto md:flex-shrink md:min-w-[120px] md:flex-[2] lg:flex-[3] xl:flex-[4] xl:max-w-none 2xl:max-w-none" style={{ zIndex: 'var(--z-dropdown)' }}>

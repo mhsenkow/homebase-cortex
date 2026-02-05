@@ -232,7 +232,7 @@ export function MapUpload({ onMapUpload, onVectorDataUpload }: MapUploadProps) {
 
     try {
       // Load one of the sample PDF floor plans
-      const samplePdfPath = '/floorplans/evacuation_map_i2systems.pdf'
+      const samplePdfPath = '/floorplans/i2systems_cleanfloorplan.pdf'
 
       console.log('Fetching sample floor plan from:', samplePdfPath)
 
@@ -268,7 +268,7 @@ export function MapUpload({ onMapUpload, onVectorDataUpload }: MapUploadProps) {
 
       console.log('Downloaded blob size:', blob.size)
 
-      const file = new File([blob], 'evacuation_map_i2systems.pdf', { type: 'application/pdf' })
+      const file = new File([blob], 'i2systems_cleanfloorplan.pdf', { type: 'application/pdf' })
 
       // Process it like a regular PDF upload
       await handleFileSelect(file)

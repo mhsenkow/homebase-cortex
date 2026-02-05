@@ -16,7 +16,9 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useRole } from '@/lib/auth'
 import { useSite } from '@/lib/SiteContext'
 import { useNotifications } from '@/lib/NotificationContext'
-import { ChevronDown, Bell, Loader2 } from 'lucide-react'
+import { useDashboardViewStore } from '@/lib/stores/dashboardViewStore'
+import { ChevronDown, Bell, Loader2, Map, LayoutGrid } from 'lucide-react'
+import { Toggle } from '@/components/ui/Toggle'
 
 const pageTitles: Record<string, { primary: string; secondary?: string }> = {
   '/dashboard': { primary: 'Fusion', secondary: 'i2 Cloud' },
@@ -35,6 +37,8 @@ export function PageTitle() {
   const { role } = useRole()
   const { sites, activeSite, setActiveSite, activeSiteId } = useSite()
   const { unreadCount } = useNotifications()
+  const dashboardViewMode = useDashboardViewStore((s) => s.viewMode)
+  const setDashboardViewMode = useDashboardViewStore((s) => s.setViewMode)
   const title = pageTitles[pathname || '/dashboard'] || { primary: 'Fusion', secondary: 'i2 Cloud' }
   const [showSiteDropdown, setShowSiteDropdown] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -59,23 +63,48 @@ export function PageTitle() {
   return (
     <div className="relative" style={{ background: 'transparent', zIndex: 1 }}>
       <div className="flex items-center justify-between px-4 sm:pl-16 md:pl-6 md:pr-6 lg:pl-8 lg:pr-8 pt-4 md:pt-6 pb-2">
-        {/* Left: Title */}
-        <div className="flex items-center gap-1.5 md:gap-2 pointer-events-none min-w-0 flex-1">
-          <span className="text-sm md:text-base font-semibold text-[var(--color-text-muted)] opacity-60 truncate">
-            {title.primary}
-          </span>
-          {title.secondary && (
-            <>
-              <span className="text-xs text-[var(--color-text-muted)] opacity-40 hidden sm:inline">/</span>
-              <span className="text-xs md:text-sm font-medium text-[var(--color-text-muted)] opacity-60 hidden sm:inline truncate">
-                {title.secondary}
-              </span>
-            </>
+        {/* Left: Breadcrumbs + Dashboard view toggle (dashboard only) */}
+        <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 md:gap-2 pointer-events-none truncate">
+            <span className="text-sm md:text-base font-semibold text-[var(--color-text-muted)] opacity-60 truncate">
+              {title.primary}
+            </span>
+            {title.secondary && (
+              <>
+                <span className="text-xs text-[var(--color-text-muted)] opacity-40 hidden sm:inline">/</span>
+                <span className="text-xs md:text-sm font-medium text-[var(--color-text-muted)] opacity-60 hidden sm:inline truncate">
+                  {title.secondary}
+                </span>
+              </>
+            )}
+            <span className="text-xs text-[var(--color-text-muted)] opacity-40 hidden md:inline">/</span>
+            <span className="text-xs md:text-sm font-medium text-[var(--color-text-muted)] opacity-60 hidden md:inline truncate">
+              {role}
+            </span>
+          </div>
+          {/* Dashboard view toggle - Map vs Grid (next to breadcrumbs) */}
+          {pathname === '/dashboard' && (
+            <div className="flex items-center gap-0.5 bg-[var(--color-surface-subtle)] rounded-lg p-0.5 border border-[var(--color-border-subtle)] flex-shrink-0">
+              <Toggle
+                pressed={dashboardViewMode === 'map'}
+                onPressedChange={() => setDashboardViewMode('map')}
+                size="icon"
+                className="w-8 h-8"
+                title="Map view"
+              >
+                <Map size={14} />
+              </Toggle>
+              <Toggle
+                pressed={dashboardViewMode === 'grid'}
+                onPressedChange={() => setDashboardViewMode('grid')}
+                size="icon"
+                className="w-8 h-8"
+                title="Grid view"
+              >
+                <LayoutGrid size={14} />
+              </Toggle>
+            </div>
           )}
-          <span className="text-xs text-[var(--color-text-muted)] opacity-40 hidden md:inline">/</span>
-          <span className="text-xs md:text-sm font-medium text-[var(--color-text-muted)] opacity-60 hidden md:inline truncate">
-            {role}
-          </span>
         </div>
 
         {/* Right: Site Selector + Notifications */}

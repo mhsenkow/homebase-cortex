@@ -273,6 +273,89 @@ export const siteRouter = router({
     }
   }),
 
+  listWithSummaries: publicProcedure.query(async () => {
+    try {
+      const sites = await prisma.site.findMany({
+        orderBy: { createdAt: 'asc' },
+      })
+
+      const [devices, zoneCounts, faultCounts, mapLocations] = await Promise.all([
+        prisma.device.findMany({
+          where: { parentId: null },
+          select: { siteId: true, status: true, warrantyExpiry: true },
+        }),
+        prisma.zone.groupBy({
+          by: ['siteId'],
+          _count: { id: true },
+        }),
+        prisma.fault.findMany({
+          where: { resolved: false },
+          select: { deviceId: true },
+        }),
+        prisma.location.findMany({
+          where: { type: 'base', imageUrl: { not: null } },
+          select: { siteId: true },
+        }),
+      ])
+
+      const deviceSiteIds = await prisma.device.findMany({
+        where: { id: { in: faultCounts.map(f => f.deviceId) } },
+        select: { id: true, siteId: true },
+      })
+      const faultBySite = deviceSiteIds.reduce<Record<string, number>>((acc, d) => {
+        acc[d.siteId] = (acc[d.siteId] || 0) + 1
+        return acc
+      }, {})
+
+      const zoneBySite = Object.fromEntries(zoneCounts.map(z => [z.siteId, z._count.id]))
+      const mapSiteIds = new Set(mapLocations.map(l => l.siteId))
+
+      const now = new Date()
+      const nearEndDays = 30
+
+      const deviceBySite = devices.reduce<Record<string, typeof devices>>((acc, d) => {
+        if (!acc[d.siteId]) acc[d.siteId] = []
+        acc[d.siteId].push(d)
+        return acc
+      }, {})
+
+      return sites.map((site) => {
+        const siteDevices = deviceBySite[site.id] || []
+        const totalDevices = siteDevices.length
+        const onlineDevices = siteDevices.filter(d => d.status === 'ONLINE').length
+        const healthPercentage = totalDevices > 0 ? Math.round((onlineDevices / totalDevices) * 100) : 100
+        const totalZones = zoneBySite[site.id] || 0
+        const criticalFaults = faultBySite[site.id] || 0
+
+        let warrantiesExpiring = 0
+        let warrantiesExpired = 0
+        for (const d of siteDevices) {
+          if (!d.warrantyExpiry) continue
+          const expiry = new Date(d.warrantyExpiry)
+          const daysRemaining = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+          if (daysRemaining < 0) warrantiesExpired++
+          else if (daysRemaining <= nearEndDays) warrantiesExpiring++
+        }
+
+        return {
+          ...site,
+          totalDevices,
+          onlineDevices,
+          offlineDevices: totalDevices - onlineDevices,
+          healthPercentage,
+          totalZones,
+          criticalFaults,
+          warrantiesExpiring,
+          warrantiesExpired,
+          mapUploaded: mapSiteIds.has(site.id),
+        }
+      })
+    } catch (error: any) {
+      logger.error('site.listWithSummaries failed:', error)
+      return []
+    }
+  }),
+
   getById: publicProcedure
     .input(z.object({
       id: z.string(),

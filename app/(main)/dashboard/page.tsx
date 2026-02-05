@@ -57,6 +57,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { PanelEmptyState } from '@/components/shared/PanelEmptyState'
 import { MapUpload } from '@/components/map/MapUpload'
+import { DashboardGridContent } from '@/components/dashboard/DashboardGridContent'
 import dynamic from 'next/dynamic'
 
 // Dynamically import MapCanvas to avoid SSR issues
@@ -91,124 +92,13 @@ interface SiteSummary {
   needsAttention: boolean
 }
 
-// Site Image Card Component (loads from database first, then client storage)
-function SiteImageCard({ siteId, sizeClass = "w-24 h-24" }: { siteId: string, sizeClass?: string }) {
-  const [displayUrl, setDisplayUrl] = useState<string | null>(null)
-  const [imageKey, setImageKey] = useState(0) // Force re-render on update
-
-  // Validate siteId before querying - use skipToken to completely skip query if invalid
-  const isValidSiteId = !!(siteId && typeof siteId === 'string' && siteId.length > 0)
-
-  // Don't render if siteId is invalid
-  if (!isValidSiteId) {
-    return (
-      <div className={`flex-shrink-0 ${sizeClass} rounded-lg bg-gradient-to-br from-[var(--color-primary-soft)]/20 to-[var(--color-surface-subtle)] border border-[var(--color-border-subtle)] flex items-center justify-center`}>
-        <div className="text-[var(--color-text-subtle)] text-xs">No Image</div>
-      </div>
-    )
-  }
-
-  // Query site image from database using tRPC
-  // Use skipToken to completely skip the query when siteId is invalid
-  // Also use enabled to prevent query execution if siteId is invalid
-  // Ensure input is always a proper object, never undefined
-  const queryInput = isValidSiteId && siteId ? { siteId: String(siteId).trim() } : skipToken
-  const { data: dbImage, isLoading: isDbLoading, isError: isDbError, refetch: refetchSiteImage } = trpc.image.getSiteImage.useQuery(
-    queryInput,
-    {
-      // Double protection: enabled flag prevents query execution
-      enabled: isValidSiteId && !!siteId && siteId.trim().length > 0,
-      // Skip if siteId is invalid to avoid validation errors
-      retry: false,
-      // Refetch on mount to ensure fresh data
-      refetchOnMount: true,
-      refetchOnWindowFocus: false,
-      // Don't use stale data
-      staleTime: 0,
-    }
-  )
-
-  // Log query state only when debugging needed
-  // ... (Removed excessive logging for cleaner code)
-
-  useEffect(() => {
-    const loadImage = async () => {
-      try {
-        if (isDbLoading) return
-        if (isDbError) { } // Handle error silently
-
-        // First try database
-        if (dbImage) {
-          setDisplayUrl(dbImage)
-          return
-        }
-
-        // Fallback to client storage
-        try {
-          const { getSiteImage } = await import('@/lib/libraryUtils')
-          const image = await getSiteImage(siteId)
-          if (image) {
-            setDisplayUrl(image)
-          } else {
-            setDisplayUrl(null)
-          }
-        } catch (e) {
-          setDisplayUrl(null)
-        }
-      } catch (error) {
-        setDisplayUrl(null)
-      }
-    }
-
-    loadImage()
-
-    // Listen for site image updates
-    const handleSiteImageUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent<{ siteId: string }>
-      if (!customEvent.detail || customEvent.detail?.siteId === siteId) {
-        setImageKey(prev => prev + 1)
-        if (siteId) {
-          const isTempId = /^site-\d+$/.test(siteId) || siteId.startsWith('temp-')
-          const isRealDbId = siteId.length > 15 && !isTempId
-          if (!isTempId && isRealDbId) {
-            refetchSiteImage()
-          }
-        }
-        loadImage()
-      }
-    }
-    window.addEventListener('siteImageUpdated', handleSiteImageUpdate)
-    return () => window.removeEventListener('siteImageUpdated', handleSiteImageUpdate)
-  }, [siteId, dbImage, isDbLoading, isDbError, refetchSiteImage])
-
-  return (
-    <div className={`flex-shrink-0 ${sizeClass} rounded-lg bg-gradient-to-br from-[var(--color-primary-soft)]/20 to-[var(--color-surface-subtle)] border border-[var(--color-border-subtle)] flex items-center justify-center relative overflow-hidden`}>
-      {displayUrl ? (
-        <img
-          src={displayUrl}
-          alt="Site"
-          className="w-full h-full object-cover"
-          onError={(e) => {
-            e.currentTarget.style.display = 'none'
-          }}
-        />
-      ) : (
-        <>
-          <Building2 size={32} className="text-[var(--color-primary)]/40" />
-          <div className="absolute bottom-1 right-1">
-            <div className="p-1 rounded bg-[var(--color-surface)]/80 backdrop-blur-sm border border-[var(--color-border-subtle)]">
-              <ImageIcon size={10} className="text-[var(--color-text-muted)]" />
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
+import { SiteImageCard } from '@/components/dashboard/SiteImageCard'
+import { useDashboardViewStore } from '@/lib/stores/dashboardViewStore'
 
 export default function DashboardPage() {
   const router = useRouter()
   const { sites, activeSiteId, setActiveSite, activeSite, addSite, updateSite, removeSite } = useSite()
+  const { viewMode, setViewMode } = useDashboardViewStore()
   const { devices } = useDevices()
   const { zones } = useZones()
   // const { rules } = useRules() // Unused
@@ -222,6 +112,11 @@ export default function DashboardPage() {
       fetchPeople(activeSiteId)
     }
   }, [activeSiteId])
+
+  // Site summaries for grid view (all sites)
+  const { data: siteSummariesData = [] } = trpc.site.listWithSummaries.useQuery(undefined, {
+    enabled: viewMode === 'grid' || sites.length > 0,
+  })
 
   // -- Map / Location State --
   const { data: locations = [] } = trpc.location.list.useQuery(
@@ -252,9 +147,6 @@ export default function DashboardPage() {
   }, [currentLocation])
 
   const mapUploaded = !!currentLocation
-
-  // -- Site Data aggregation (kept for the summary/overlay) --
-  const [siteSummaries, setSiteSummaries] = useState<SiteSummary[]>([])
 
   // Fetch key data for active site
   const [siteDevices, setSiteDevices] = useState<Device[]>([])
@@ -372,33 +264,129 @@ export default function DashboardPage() {
   }
 
 
-  // -- Render --
+  // View toggle is in PageTitle (top left, next to breadcrumbs)
 
+  // -- Render: Grid View (sites mode) - grid + right panel for selected site --
+  if (viewMode === 'grid') {
+    const displaySites = siteSummariesData.length > 0 ? siteSummariesData : sites.map(s => ({
+      ...s,
+      totalDevices: 0,
+      onlineDevices: 0,
+      offlineDevices: 0,
+      healthPercentage: 100,
+      totalZones: 0,
+      criticalFaults: 0,
+      warrantiesExpiring: 0,
+      warrantiesExpired: 0,
+      mapUploaded: false,
+    }))
+
+    return (
+      <div className="h-full flex flex-col min-h-0 overflow-hidden bg-[var(--color-background-elevated)]">
+        <div className="flex-shrink-0 page-padding-x pt-3 md:pt-4 pb-2 md:pb-3">
+          <SearchIsland
+            position="top"
+            fullWidth={true}
+            title="Sites"
+            subtitle={displaySites.length > 0 ? `${displaySites.length} site${displaySites.length !== 1 ? 's' : ''}` : 'Multi-site overview'}
+            metrics={displaySites.length > 0 ? [
+              { label: 'Total Sites', value: displaySites.length },
+              {
+                label: 'Avg Health',
+                value: `${Math.round(displaySites.reduce((a, s) => a + (s.healthPercentage || 100), 0) / displaySites.length)}%`,
+              },
+            ] : []}
+          />
+        </div>
+
+        <div className="flex-1 min-h-0 p-4 pt-0 md:pl-4 flex flex-row overflow-hidden">
+          {/* Grid of site cards */}
+          <div className="flex-1 min-h-0 overflow-auto">
+            <DashboardGridContent
+              displaySites={displaySites}
+              viewToggle={null}
+              onSiteSelect={(siteId) => setActiveSite(siteId)}
+              hideHeader
+              selectedSiteId={activeSiteId}
+            />
+          </div>
+
+          {/* Right panel - site details (same as map/focused mode) */}
+          <ResizablePanel
+            defaultWidth={400}
+            minWidth={320}
+            maxWidth={600}
+            className="flex-shrink-0 h-full ml-4"
+          >
+            {activeSite && activeSiteSummary ? (
+              <SiteDetailsPanel
+                site={activeSite}
+                devices={siteDevices}
+                zones={siteZones}
+                rules={[]}
+                criticalFaults={activeSiteSummary.criticalFaults || []}
+                warrantiesExpiring={activeSiteSummary.warrantiesExpiring || 0}
+                warrantiesExpired={activeSiteSummary.warrantiesExpired || 0}
+                mapUploaded={mapUploaded}
+                healthPercentage={activeSiteSummary.healthPercentage}
+                onlineDevices={activeSiteSummary.onlineDevices || 0}
+                offlineDevices={(activeSiteSummary.totalDevices || 0) - (activeSiteSummary.onlineDevices || 0)}
+                missingDevices={0}
+                onAddSite={() => {}}
+                onEditSite={() => {}}
+                onRemoveSite={() => {}}
+                onImportSites={() => {}}
+                onExportSites={() => {}}
+              />
+            ) : (
+              <div className="h-full w-full flex flex-col items-center justify-center p-8 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
+                <Building2 size={48} className="text-[var(--color-text-muted)] mb-4" />
+                <p className="text-sm font-medium text-[var(--color-text)]">Select a site</p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1 text-center">
+                  Click a site card to view details
+                </p>
+              </div>
+            )}
+          </ResizablePanel>
+        </div>
+      </div>
+    )
+  }
+
+  // -- Render: Map View (requires active site) --
   if (!activeSite) {
     return (
-      <div className="h-full flex items-center justify-center p-8">
-        {/* Fallback if no site is selected/exists */}
+      <div className="h-full flex flex-col min-h-0 overflow-hidden bg-[var(--color-background-elevated)]">
+        <div className="flex-shrink-0 page-padding-x pt-3 md:pt-4 pb-2 md:pb-3">
+          <SearchIsland
+            position="top"
+            fullWidth={true}
+            title="Home Base"
+            subtitle="Select a site"
+          />
+      </div>
+      <div className="flex-1 flex items-center justify-center p-8">
         <PanelEmptyState
-          icon={Building2}
-          title="No Site Selected"
-          description="Please select or create a site to view the Home Base."
-          action={<Button onClick={() => window.location.reload()}>Reload</Button>}
-        />
+            icon={Building2}
+            title="No Site Selected"
+            description="Switch to grid view to see all sites, or select a site to view the map."
+            action={
+              <Button onClick={() => setViewMode('grid')}>View all sites</Button>
+            }
+          />
+        </div>
       </div>
     )
   }
 
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden bg-[var(--color-background-elevated)]">
-      {/* Top Search Island - Modified to be simpler for Home Base view */}
       <div className="flex-shrink-0 page-padding-x pt-3 md:pt-4 pb-2 md:pb-3 relative z-10">
         <SearchIsland
           position="top"
           fullWidth={true}
           title="Home Base"
           subtitle={activeSite.name}
-          // Hide metrics that are duplicate of the card overlay? 
-          // Or keep them as high level summary. Let's keep a simplified set.
           metrics={activeSiteSummary ? [
             {
               label: 'System Health',
@@ -413,10 +401,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Main Content: Split View (Map Left, Details Right) */}
       <div className="flex-1 min-h-0 p-4 pt-0 md:pl-4 flex flex-row overflow-hidden">
-
-        {/* Map Area */}
         <div className="flex-1 rounded-2xl overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] relative shadow-xl">
           {mapUploaded ? (
             <MapCanvas
@@ -430,7 +415,6 @@ export default function DashboardPage() {
                 status: d.status,
                 signal: d.signal || 100
               }))}
-              // Read-only / view mode mostly
               mode="select"
               showZones={true}
               zones={(siteZones || []).map((z: any) => ({
@@ -459,7 +443,6 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Right Side Panel */}
         <ResizablePanel
           defaultWidth={400}
           minWidth={320}
@@ -471,7 +454,7 @@ export default function DashboardPage() {
               site={activeSite}
               devices={siteDevices}
               zones={siteZones}
-              rules={[]} // Fetch rules if needed, empty for now
+              rules={[]}
               criticalFaults={activeSiteSummary.criticalFaults || []}
               warrantiesExpiring={activeSiteSummary.warrantiesExpiring || 0}
               warrantiesExpired={activeSiteSummary.warrantiesExpired || 0}
@@ -479,12 +462,12 @@ export default function DashboardPage() {
               healthPercentage={activeSiteSummary.healthPercentage}
               onlineDevices={activeSiteSummary.onlineDevices || 0}
               offlineDevices={(activeSiteSummary.totalDevices || 0) - (activeSiteSummary.onlineDevices || 0)}
-              missingDevices={0} // Fetch if needed
-              onAddSite={() => { }} // Placeholder
-              onEditSite={() => { }} // Placeholder
-              onRemoveSite={() => { }} // Placeholder
-              onImportSites={() => { }} // Placeholder
-              onExportSites={() => { }} // Placeholder
+              missingDevices={0}
+              onAddSite={() => { }}
+              onEditSite={() => { }}
+              onRemoveSite={() => { }}
+              onImportSites={() => { }}
+              onExportSites={() => { }}
             />
           ) : (
             <div className="h-full w-full flex items-center justify-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
